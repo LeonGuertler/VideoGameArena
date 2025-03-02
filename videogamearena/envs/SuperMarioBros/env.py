@@ -5,42 +5,10 @@ import numpy as np
 from typing import Union, Dict
 
 
-
-# _button_map = {
-#     'right':  0b10000000,
-#     'left':   0b01000000,
-#     'down':   0b00100000,
-#     'up':     0b00010000,
-#     'start':  0b00001000,
-#     'select': 0b00000100,
-#     'B':      0b00000010,
-#     'A':      0b00000001,
-#     'NOOP':   0b00000000,
-# }
-
-
-
 class SuperMarioBrosEnv:
     """A simplified Super Mario Bros environment that uses JoypadSpace for actions."""
-    
-    # Define the action mapping for the JoypadSpace wrapper
-    ACTIONS = [
-        ['NOOP'],
-        ['right'],
-        ['right', 'A'],
-        ['right', 'B'],
-        ['right', 'A', 'B'],
-        ['A'],
-        ['left'],
-        ['left', 'A'],
-        ['left', 'B'],
-        ['left', 'A', 'B'],
-        ['down'],
-        ['up'],
-    ]
-    
-    # Define mapping from our simple action codes to JoypadSpace action indices
-    ACTION_MAPPING = {
+
+    BYTE_MAPPING = {
         "u": 0b00010000,
         "d": 0b00100000,
         "l": 0b01000000,
@@ -52,23 +20,24 @@ class SuperMarioBrosEnv:
         "n": 0b00000000,
     }
 
+    LEGAL_BYTES = [
+        0b10000001, # ('r', 'a'),
+        0b10000010, # ('r', 'b'),
+        0b10000011, # ('r', 'a', 'b'),
+        0b01000001, # ('l', 'a'),
+        0b01000010, # ('l', 'b'),
+        0b01000011, # ('l', 'a', 'b'),
+        0b00010000,
+        0b00100000,
+        0b01000000,
+        0b10000000,
+        0b00000001,
+        0b00000010,
+        0b00001000, # start
+        0b00000100, # select
+        0b00000000,
+    ]
 
-
-
-    #     'n': 0,         # NOOP
-    #     'r': 1,         # right
-    #     'ra': 2,        # right + A (jump right)
-    #     'rb': 3,        # right + B (run right)
-    #     'rab': 4,       # right + A + B (jump while running right)
-    #     'a': 5,         # A (jump)
-    #     'l': 6,         # left
-    #     'la': 7,        # left + A (jump left)
-    #     'lb': 8,        # left + B (run left)
-    #     'lab': 9,       # left + A + B (jump while running left)
-    #     'd': 10,        # down
-    #     'u': 11,        # up
-    # }
-    
     def __init__(self, mode='human'):
         """
         Initialize the Mario environment.
@@ -96,51 +65,6 @@ class SuperMarioBrosEnv:
         # Simple reset without trying to skip start screen
         self.env.reset()
         
-        # Note: We'll let the user or model press start button directly
-    
-    def _initialize_game(self):
-        """Complete initialization process including bypassing start screens."""
-        print("Initializing Mario environment...")
-        
-        # First, reset the environment to get to a stable state
-        initial_state = self.env.reset()
-        
-        # Now we'll try to bypass the title screen
-        START_BUTTON = 8  # START is bit 3 (value 8)
-        
-        print("Attempting to bypass title screen...")
-        # Press START repeatedly with longer intervals
-        for attempt in range(10):
-            print(f"Start attempt {attempt+1}")
-            
-            # Hold START for several frames
-            for _ in range(5):
-                # Use the base environment to ensure direct control
-                self.env.step(START_BUTTON)
-            
-            # Release all buttons for several frames
-            for _ in range(10):
-                self.env.step(0)
-            
-            # Check if game has started by looking at the timer
-            if self._get_time() > 0:
-                print("Game appears to have started!")
-                break
-        
-        # Give the game more time to fully initialize
-        for _ in range(30):
-            self.env.step(0)
-        
-        # Final check and initialization
-        self._time_last = self._get_time()
-        self._x_position_last = self._get_x_position()
-        
-        print(f"Game state: World {self._get_world()}-{self._get_stage()}, Time: {self._get_time()}")
-        
-        if self._get_time() > 0:
-            print("Game successfully initialized!")
-        else:
-            print("WARNING: Game initialization may have failed.")
     
     def _get_world(self):
         """Get current world number."""
@@ -231,114 +155,18 @@ Combinations (you can also use these directly):
             total_reward = 0
             executed_actions = []
 
-            # execute all submitted actions in the env
-            # Step the environment with the action
 
-            legal_bytes = [
-                0b10000001, # ('r', 'a'),
-                0b10000010, # ('r', 'b'),
-                0b10000011, # ('r', 'a', 'b'),
-                0b01000001, # ('l', 'a'),
-                0b01000010, # ('l', 'b'),
-                0b01000011, # ('l', 'a', 'b'),
-                0b00010000,
-                0b00100000,
-                0b01000000,
-                0b10000000,
-                0b00000001,
-                0b00000010,
-                0b00001000, # start
-                0b00000100, # select
-                0b00000000,
-            ]
-            # legal_combinations = [
-            #     ('r', 'a'),
-            #     ('r', 'b'),
-            #     ('r', 'a', 'b'),
-            #     ('l', 'a'),
-            #     ('l', 'b'),
-            #     ('l', 'a', 'b'),
-            # ]
             action = 0b00000000
             for a in action_groups:
-                action += self.ACTION_MAPPING[a]
+                action += self.BYTE_MAPPING[a]
             
-            if action in legal_bytes:
+            if action in self.LEGAL_BYTES:
                 state, reward, done, info = self._step_with_action(action)
                 total_reward += reward
             else:
                 state, reward, done, info = self._step_with_action(0)  # NOOP
                 print(f"Not a legal combination: {bin(action)}")
 
-
-            # ACTION_MAPPING = {
-            #     "u": 0b00010000,
-            #     "d": 0b00100000,
-            #     "l": 0b01000000,
-            #     "r": 0b10000000,
-            #     "a": 0b00000001,
-            #     "b": 0b00000010,
-            #     "o": 0b00001000, # start
-            #     "p": 0b00000100, # select
-            #     "n": 0b00000000,
-            # }
-
-
-
-            # # convert action groups to set
-            # if tuple(action_groups) in legal_combinations:
-            #     # sum up the bytes
-            #     action = 0b00000000
-
-            #     for a in action_groups:
-
-
-            # state, reward, done, info = self._step_with_action([self.ACTION_MAPPING[a] for a in action_groups])
-            # for action in action_groups:
-            #     state, reward, done, info = self._step_with_action(self.ACTION_MAPPING[action])
-
-            
-            # Print debug info
-
-            # print(f"Executing: {executed_actions[-1]} (action index: {action_idx})")
-                    
-            
-            # # Split into time steps based on '+' delimiter
-            # time_steps = ' '.join(action_groups).split('+')
-            
-            # for step in time_steps:
-            #     # Get all actions at this time step (to be executed simultaneously)
-            #     simultaneous_actions = [a.strip() for a in step.split() if a.strip()]
-                
-            #     if simultaneous_actions:
-            #         # Check if the combination is directly in our mapping
-            #         if len(simultaneous_actions) == 1 and simultaneous_actions[0] in self.ACTION_MAPPING:
-            #             # Single action that maps directly
-            #             action_idx = self.ACTION_MAPPING[simultaneous_actions[0]]
-            #             executed_actions.append(f"{simultaneous_actions[0]}")
-            #         else:
-            #             # Process multiple actions to determine the combined action
-
-            #             combined_action = self._combine_actions(simultaneous_actions)
-            #             if combined_action in self.ACTION_MAPPING:
-            #                 action_idx = self.ACTION_MAPPING[combined_action]
-            #                 executed_actions.append(f"{combined_action}")
-            #             else:
-            #                 # If the combination isn't valid, use NOOP
-            #                 action_idx = 0
-            #                 executed_actions.append("n (invalid combination)")
-                    
-            #         # Step the environment with the action
-            #         state, reward, done, info = self._step_with_action(action_idx)
-            #         total_reward += reward
-                    
-            #         # Print debug info
-            #         print(f"Executing: {executed_actions[-1]} (action index: {action_idx})")
-                    
-            #         # Break if the episode is done
-            #         if done:
-            #             break
-            
             self.last_action_info = f"Executed actions: {' '.join(executed_actions)}"
             reward = total_reward
         
@@ -350,27 +178,7 @@ Combinations (you can also use these directly):
         time.sleep(0.03)
         return observation, reward, done, info
     
-    def _combine_actions(self, actions):
-        """
-        Combine multiple action codes into a single composite action.
-        
-        Args:
-            actions (list): List of action codes like ['r', 'a']
-            
-        Returns:
-            str: Combined action code like 'ra'
-        """
-        # Special case handling - if conflicting directions, use the last one
-        directions = {'u', 'd', 'l', 'r'}
-        dir_actions = [a for a in actions if a in directions]
-        if len(dir_actions) > 1:
-            # Only keep the last direction
-            for d in dir_actions[:-1]:
-                actions.remove(d)
-        
-        # Combine the remaining actions
-        return ''.join(sorted(actions))
-    
+
     def _step_with_action(self, action_idx):
         """
         Step the environment with the given action index.

@@ -296,13 +296,9 @@ class HumanAgent:
         # Define basic key mappings
         self.key_mapping = {
             pygame.K_UP: 'u',     # Up
-            # pygame.K_w: 'u',      # Up alternative
             pygame.K_DOWN: 'd',   # Down
-            # pygame.K_s: 'd',      # Down alternative
             pygame.K_LEFT: 'l',   # Left
-            # pygame.K_a: 'l',      # Left alternative
             pygame.K_RIGHT: 'r',  # Right
-            # pygame.K_d: 'r',      # Right alternative
             pygame.K_a: 'a',      # Jump (A)
             pygame.K_b: 'b',      # Run (B)
             pygame.K_p: 'o',      # select
