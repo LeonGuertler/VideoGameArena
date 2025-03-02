@@ -54,6 +54,12 @@ import time
 from videogamearena.envs.SuperMarioBros.env import SuperMarioBrosEnv
 from videogamearena.agents.basic_agents import OpenRouterAgent, HumanAgent
 
+# import nes_py 
+# env = SuperMarioBrosEnv()
+# nes_py.play_human(env=env)
+
+# exit()
+
 
 
 # initialize agent

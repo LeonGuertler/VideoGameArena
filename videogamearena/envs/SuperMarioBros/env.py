@@ -1,338 +1,73 @@
-
-import os, re, time
+from nes_py.wrappers import JoypadSpace
 from nes_py import NESEnv
+import os, re, time
+import numpy as np
+from typing import Union, Dict
 
-# class SuperMarioBrosEnv(NESEnv):
-#     """A minimal Super Mario Bros environment optimized for language model interaction."""
-    
-#     # Define the action mapping for language models
-#     ACTION_MAPPING = {
-#         'a': 'A',           # Jump
-#         'b': 'B',           # Run
-#         'u': 'up',          # Move up (for climbing)
-#         'd': 'down',        # Move down (for pipes)
-#         'l': 'left',        # Move left
-#         'r': 'right',       # Move right
-#         'n': 'NOOP',        # No operation
-#     }
-    
-#     def __init__(self, mode='human'):
-#         """
-#         Initialize the Mario environment.
-        
-#         Args:
-#             mode (str): Game speed mode - 'slow' or 'human'
-#         """
-#         # Path to your Super Mario Bros ROM file
-#         rom_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'super-mario-bros.nes')
-#         super(SuperMarioBrosEnv, self).__init__(rom_path)
-        
-#         # Initialize variables
-#         self._x_position_last = 0
-#         self._time_last = 0
-#         self.last_action_info = "No actions executed yet."
-#         self.mode = mode
-#         self.frame_skip = 1 if mode == 'human' else 4
-        
-#         # Reset the environment
-#         self.reset()
-#         # Skip the start screen
-#         self._skip_start_screen()
-#         # Create a backup state
-#         self._backup()
-    
-#     def _skip_start_screen(self):
-#         """Press and release start to skip all intro screens and get to actual gameplay."""
-#         # Wait a few frames first to make sure the ROM is loaded
-#         for _ in range(5):
-#             self._frame_advance(0)
-        
-#         # Press start repeatedly with some delay until we get past the title screen
-#         for _ in range(20):
-#             # Press start
-#             self._frame_advance(8)  # START button (bit 4)
-#             # Wait a few frames
-#             for _ in range(3):
-#                 self._frame_advance(0)
-#             # Release start
-#             self._frame_advance(0)
-            
-#             # Check if the game has moved past the title screen
-#             if (self.ram[0x075f] > 0 or self.ram[0x075c] > 0):  # World or stage values are set
-#                 break
-            
-#             # Add a small delay between attempts
-#             for _ in range(5):
-#                 self._frame_advance(0)
-        
-#         # Now we need to get past the black screen with the world announcement
-#         # This screen shows "WORLD 1-1" and "MARIO × 3"
-#         # Press start and wait until Mario's x position is initialized
-#         for _ in range(30):  # Try multiple times
-#             # Press start
-#             self._frame_advance(8)
-#             # Wait a few frames
-#             for _ in range(3):
-#                 self._frame_advance(0)
-#             # Release start
-#             self._frame_advance(0)
-            
-#             # Check if Mario's position has been initialized to something other than zero
-#             # When actual gameplay starts, Mario will have a non-zero x position
-#             if self.ram[0x86] > 20:  # Mario has a starting position (typically around 40)
-#                 break
-                
-#             # Add a small delay between attempts
-#             for _ in range(5):
-#                 self._frame_advance(0)
-        
-#         # Final waiting period to ensure the game is fully loaded
-#         for _ in range(10):
-#             self._frame_advance(0)
-        
-#         # Update the position and time trackers
-#         self._x_position_last = self.ram[0x6d] * 0x100 + self.ram[0x86]
-#         self._time_last = int(''.join(map(str, filter(lambda x: x != 0, self.ram[0x07f8:0x07fb]))) or '400')
-    
-#     def _get_reward(self):
-#         """Return a simple reward based on x-position progress."""
-#         # Calculate x position reward
-#         x_position = self.ram[0x6d] * 0x100 + self.ram[0x86]
-#         x_reward = x_position - self._x_position_last
-#         self._x_position_last = x_position
-        
-#         # Calculate time penalty
-#         time = int(''.join(map(str, filter(lambda x: x != 0, self.ram[0x07f8:0x07fb]))) or '0')
-#         time_penalty = time - self._time_last
-#         self._time_last = time
-        
-#         # Calculate death penalty
-#         player_state = self.ram[0x000e]
-#         death_penalty = -15 if player_state == 0x0b or player_state == 0x06 else 0
-        
-#         return x_reward + time_penalty + death_penalty
-    
-#     def _get_done(self):
-#         """Return True if the episode is over."""
-#         # Check if Mario is dead or dying
-#         player_state = self.ram[0x000e]
-#         return player_state == 0x0b or player_state == 0x06 or self.ram[0x075a] == 0xff
-    
-#     def _get_info(self):
-#         """Return information about the current state."""
-#         return {
-#             'x_pos': self.ram[0x6d] * 0x100 + self.ram[0x86],
-#             'y_pos': 255 - self.ram[0x03b8],
-#             'world': self.ram[0x075f] + 1,
-#             'stage': self.ram[0x075c] + 1,
-#             'time': int(''.join(map(str, filter(lambda x: x != 0, self.ram[0x07f8:0x07fb]))) or '0'),
-#             'coins': int(''.join(map(str, filter(lambda x: x != 0, self.ram[0x07ed:0x07ef]))) or '0'),
-#             'score': int(''.join(map(str, filter(lambda x: x != 0, self.ram[0x07de:0x07e4]))) or '0'),
-#             'life': self.ram[0x075a],
-#             'last_action': self.last_action_info
-#         }
-    
-#     def reset(self):
-#         """Reset the environment and return the initial observation with instructions."""
-#         # Call the parent reset method
-#         initial_state = super().reset()
-        
-#         # Reset tracking variables
-#         self._x_position_last = self.ram[0x6d] * 0x100 + self.ram[0x86]
-#         self._time_last = int(''.join(map(str, filter(lambda x: x != 0, self.ram[0x07f8:0x07fb]))) or '400')
-#         self.last_action_info = "No actions executed yet."
-        
-#         # Add instructions to the observation
-#         instructions = """
-# Action format: Submit actions in square brackets like [a] or [r].
-# You can submit multiple actions simultaneously: [l] [a] (jump left)
-# You can also submit action sequences: [r] + [r] + [r] [a] (move right twice, then jump right)
 
-# Available actions:
-# - [a]: Jump (A button)
-# - [b]: Run (B button)
-# - [u]: Move up (for climbing)
-# - [d]: Move down (for pipes)
-# - [l]: Move left
-# - [r]: Move right
-# - [n]: No operation
 
-# Common combinations:
-# - Jump right: [r] [a]
-# - Run right: [r] [b]
-# - Jump while running right: [r] [a] [b]
-# - Jump left: [l] [a]
-# - Run left: [l] [b]
-#         """
-        
-#         # Return observation with visuals and text
-#         return {
-#             'visual': initial_state,
-#             'text': instructions
-#         }
-    
-#     def step(self, action_string):
-#         """
-#         Process action string, execute actions, and return the result.
-#         The game will continue running even without explicit actions.
-        
-#         Args:
-#             action_string (str): A string containing actions in [x] format
-        
-#         Returns:
-#             tuple: (observation, reward, done, info)
-#         """
-#         # Extract actions using regex
-#         action_groups = re.findall(r'\[(.[^\]]*)\]', action_string.lower())
-        
-#         # Process the actions
-#         if not action_groups:
-#             self.last_action_info = "No actions were executed because none were provided in the [x] format."
-#             # Just advance the frame with no action (game continues running)
-#             state, reward, done, info = self._step_game_with_no_action()
-#         else:
-#             total_reward = 0
-#             executed_actions = []
-            
-#             # Split into time steps based on '+' delimiter
-#             time_steps = ' '.join(action_groups).split('+')
-            
-#             for step in time_steps:
-#                 # Get all actions at this time step (to be executed simultaneously)
-#                 simultaneous_actions = [a.strip() for a in step.split() if a.strip()]
-                
-#                 if simultaneous_actions:
-#                     # Convert to NES buttons for simultaneous press
-#                     nes_buttons = []
-#                     for action_code in simultaneous_actions:
-#                         if action_code in self.ACTION_MAPPING:
-#                             nes_buttons.append(self.ACTION_MAPPING[action_code])
-                    
-#                     # Take the step with simultaneous button presses
-#                     nes_action = self._convert_to_nes_action(nes_buttons)
-#                     executed_actions.append(f"({'+'.join(simultaneous_actions)})")
-                    
-#                     # Step the game with the action and apply frame skip based on mode
-#                     state, reward, done, info = self._step_game_with_action(nes_action)
-#                     total_reward += reward
-                    
-#                     # Break if the episode is done
-#                     if done:
-#                         break
-            
-#             self.last_action_info = f"Executed actions: {' '.join(executed_actions)}"
-#             reward = total_reward
-        
-#         # Return observation as a dictionary with visuals and text information
-#         observation = {
-#             'visual': state,
-#             'text': self._get_formatted_info_text()
-#         }
-        
-#         return observation, reward, done, info
-    
-#     def _step_game_with_no_action(self):
-#         """Step the game with no action (NOOP)."""
-#         reward_sum = 0
-#         done = False
-#         info = None
-        
-#         # Apply frame skip based on mode
-#         for _ in range(self.frame_skip):
-#             state, reward, done, info = super().step(0)  # NOOP action
-#             reward_sum += reward
-#             if done:
-#                 break
-        
-#         return state, reward_sum, done, info
-    
-#     def _step_game_with_action(self, action):
-#         """Step the game with a specific action."""
-#         reward_sum = 0
-#         done = False
-#         info = None
-        
-#         # Apply frame skip based on mode
-#         for _ in range(self.frame_skip):
-#             state, reward, done, info = super().step(action)
-#             reward_sum += reward
-#             if done:
-#                 break
-        
-#         return state, reward_sum, done, info
-    
-#     def _convert_to_nes_action(self, action_buttons):
-#         """
-#         Convert action buttons to NES-py action bitmask.
-        
-#         Args:
-#             action_buttons (list): List of button names to press
-            
-#         Returns:
-#             int: Action bitmask for NES-py
-#         """
-#         # NES controller button mapping:
-#         # 7 6 5 4 3 2 1 0
-#         # A B S T U D L R
-#         # (S=Select, T=Start, U=Up, D=Down, L=Left, R=Right)
-        
-#         button_map = {
-#             'A': 0x80,      # A button
-#             'B': 0x40,      # B button
-#             'SELECT': 0x20, # Select button
-#             'START': 0x10,  # Start button
-#             'up': 0x08,     # Up
-#             'down': 0x04,   # Down
-#             'left': 0x02,   # Left
-#             'right': 0x01,  # Right
-#             'NOOP': 0x00,   # No operation
-#         }
-        
-#         # Start with no buttons pressed
-#         action = 0x00
-        
-#         # Add each button press to the action
-#         for button in action_buttons:
-#             if button in button_map:
-#                 action |= button_map[button]
-        
-#         return action
-    
-#     def _get_formatted_info_text(self):
-#         """Format the game information into a readable text string."""
-#         info = self._get_info()
-#         text = f"""
-# World: {info['world']}-{info['stage']}
-# Position: ({info['x_pos']}, {info['y_pos']})
-# Coins: {info['coins']} | Lives: {info['life']} | Time: {info['time']}
-# {info['last_action']}
-# """
-#         return text
-    
-#     def render(self, mode='human'):
-#         """Render the environment."""
-#         return super().render(mode=mode)
-    
-#     def set_mode(self, mode):
-#         """Set the game speed mode."""
-#         if mode not in ['slow', 'human']:
-#             raise ValueError("Mode must be 'slow' or 'human'")
-#         self.mode = mode
-#         self.frame_skip = 1 if mode == 'human' else 4
+# _button_map = {
+#     'right':  0b10000000,
+#     'left':   0b01000000,
+#     'down':   0b00100000,
+#     'up':     0b00010000,
+#     'start':  0b00001000,
+#     'select': 0b00000100,
+#     'B':      0b00000010,
+#     'A':      0b00000001,
+#     'NOOP':   0b00000000,
+# }
 
-class SuperMarioBrosEnv(NESEnv):
-    """A minimal Super Mario Bros environment optimized for language model interaction."""
+
+
+class SuperMarioBrosEnv:
+    """A simplified Super Mario Bros environment that uses JoypadSpace for actions."""
     
-    # Define the action mapping
+    # Define the action mapping for the JoypadSpace wrapper
+    ACTIONS = [
+        ['NOOP'],
+        ['right'],
+        ['right', 'A'],
+        ['right', 'B'],
+        ['right', 'A', 'B'],
+        ['A'],
+        ['left'],
+        ['left', 'A'],
+        ['left', 'B'],
+        ['left', 'A', 'B'],
+        ['down'],
+        ['up'],
+    ]
+    
+    # Define mapping from our simple action codes to JoypadSpace action indices
     ACTION_MAPPING = {
-        'a': 'A',           # Jump
-        'b': 'B',           # Run
-        'u': 'up',          # Move up (for climbing)
-        'd': 'down',        # Move down (for pipes)
-        'l': 'left',        # Move left
-        'r': 'right',       # Move right
-        'n': 'NOOP',        # No operation
+        "u": 0b00010000,
+        "d": 0b00100000,
+        "l": 0b01000000,
+        "r": 0b10000000,
+        "a": 0b00000001,
+        "b": 0b00000010,
+        "o": 0b00001000, # start
+        "p": 0b00000100, # select
+        "n": 0b00000000,
     }
+
+
+
+
+    #     'n': 0,         # NOOP
+    #     'r': 1,         # right
+    #     'ra': 2,        # right + A (jump right)
+    #     'rb': 3,        # right + B (run right)
+    #     'rab': 4,       # right + A + B (jump while running right)
+    #     'a': 5,         # A (jump)
+    #     'l': 6,         # left
+    #     'la': 7,        # left + A (jump left)
+    #     'lb': 8,        # left + B (run left)
+    #     'lab': 9,       # left + A + B (jump while running left)
+    #     'd': 10,        # down
+    #     'u': 11,        # up
+    # }
     
     def __init__(self, mode='human'):
         """
@@ -343,7 +78,12 @@ class SuperMarioBrosEnv(NESEnv):
         """
         # Path to your Super Mario Bros ROM file
         rom_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'super-mario-bros.nes')
-        super(SuperMarioBrosEnv, self).__init__(rom_path)
+        
+        # Create the base NES environment
+        self.env = NESEnv(rom_path)
+        
+        # Wrap it with JoypadSpace to use simplified actions
+        # self.env = JoypadSpace(self.base_env, self.ACTIONS)
         
         # Initialize variables
         self._x_position_last = 0
@@ -353,120 +93,84 @@ class SuperMarioBrosEnv(NESEnv):
         self.frame_skip = 1 if mode == 'human' else 4
         self.total_reward = 0
         
-        # Reset the environment
-        self.reset()
-        # Skip the start screen
-        self._skip_start_screen()
-        # Create a backup state
-        self._backup()
-    
-    def _skip_start_screen(self):
-        """Press and release start to skip all intro screens and get to actual gameplay."""
-        # Wait a few frames first to make sure the ROM is loaded
-        for _ in range(5):
-            self._frame_advance(0)
+        # Simple reset without trying to skip start screen
+        self.env.reset()
         
-        # Press start repeatedly with some delay until we get past the title screen
-        for _ in range(20):
-            # Press start
-            self._frame_advance(8)  # START button (bit 4)
-            # Wait a few frames
-            for _ in range(3):
-                self._frame_advance(0)
-            # Release start
-            self._frame_advance(0)
+        # Note: We'll let the user or model press start button directly
+    
+    def _initialize_game(self):
+        """Complete initialization process including bypassing start screens."""
+        print("Initializing Mario environment...")
+        
+        # First, reset the environment to get to a stable state
+        initial_state = self.env.reset()
+        
+        # Now we'll try to bypass the title screen
+        START_BUTTON = 8  # START is bit 3 (value 8)
+        
+        print("Attempting to bypass title screen...")
+        # Press START repeatedly with longer intervals
+        for attempt in range(10):
+            print(f"Start attempt {attempt+1}")
             
-            # Check if the game has moved past the title screen
-            if (self.ram[0x075f] > 0 or self.ram[0x075c] > 0):  # World or stage values are set
-                break
-            
-            # Add a small delay between attempts
+            # Hold START for several frames
             for _ in range(5):
-                self._frame_advance(0)
-        
-        # Now we need to get past the black screen with the world announcement
-        # This screen shows "WORLD 1-1" and "MARIO × 3"
-        # Press start and wait until Mario's x position is initialized
-        for _ in range(30):  # Try multiple times
-            # Press start
-            self._frame_advance(8)
-            # Wait a few frames
-            for _ in range(3):
-                self._frame_advance(0)
-            # Release start
-            self._frame_advance(0)
+                # Use the base environment to ensure direct control
+                self.env.step(START_BUTTON)
             
-            # Check if Mario's position has been initialized to something other than zero
-            # When actual gameplay starts, Mario will have a non-zero x position
-            if self.ram[0x86] > 20:  # Mario has a starting position (typically around 40)
+            # Release all buttons for several frames
+            for _ in range(10):
+                self.env.step(0)
+            
+            # Check if game has started by looking at the timer
+            if self._get_time() > 0:
+                print("Game appears to have started!")
                 break
-                
-            # Add a small delay between attempts
-            for _ in range(5):
-                self._frame_advance(0)
         
-        # Final waiting period to ensure the game is fully loaded
-        for _ in range(10):
-            self._frame_advance(0)
+        # Give the game more time to fully initialize
+        for _ in range(30):
+            self.env.step(0)
         
-        # Update the position and time trackers
-        self._x_position_last = self.ram[0x6d] * 0x100 + self.ram[0x86]
-        self._time_last = int(''.join(map(str, filter(lambda x: x != 0, self.ram[0x07f8:0x07fb]))) or '400')
+        # Final check and initialization
+        self._time_last = self._get_time()
+        self._x_position_last = self._get_x_position()
+        
+        print(f"Game state: World {self._get_world()}-{self._get_stage()}, Time: {self._get_time()}")
+        
+        if self._get_time() > 0:
+            print("Game successfully initialized!")
+        else:
+            print("WARNING: Game initialization may have failed.")
     
-    def _get_reward(self):
-        """Return a simple reward based on x-position progress."""
-        # Calculate x position reward
-        x_position = self.ram[0x6d] * 0x100 + self.ram[0x86]
-        x_reward = x_position - self._x_position_last
-        self._x_position_last = x_position
-        
-        # Calculate time penalty
-        time = int(''.join(map(str, filter(lambda x: x != 0, self.ram[0x07f8:0x07fb]))) or '0')
-        time_penalty = time - self._time_last
-        self._time_last = time
-        
-        # Calculate death penalty
-        player_state = self.ram[0x000e]
-        death_penalty = -15 if player_state == 0x0b or player_state == 0x06 else 0
-        
-        return x_reward + time_penalty + death_penalty
+    def _get_world(self):
+        """Get current world number."""
+        return self.env.unwrapped.ram[0x075f] + 1
     
-    def _get_done(self):
-        """Return True if the episode is over."""
-        # Check if Mario is dead or dying
-        player_state = self.ram[0x000e]
-        return player_state == 0x0b or player_state == 0x06 or self.ram[0x075a] == 0xff
-    
-    def _get_info(self):
-        """Return information about the current state."""
-        return {
-            'x_pos': self.ram[0x6d] * 0x100 + self.ram[0x86],
-            'y_pos': 255 - self.ram[0x03b8],
-            'world': self.ram[0x075f] + 1,
-            'stage': self.ram[0x075c] + 1,
-            'time': int(''.join(map(str, filter(lambda x: x != 0, self.ram[0x07f8:0x07fb]))) or '0'),
-            'coins': int(''.join(map(str, filter(lambda x: x != 0, self.ram[0x07ed:0x07ef]))) or '0'),
-            'score': int(''.join(map(str, filter(lambda x: x != 0, self.ram[0x07de:0x07e4]))) or '0'),
-            'life': self.ram[0x075a],
-            'last_action': self.last_action_info
-        }
-    
+    def _get_stage(self):
+        """Get current stage/level number."""
+        return self.env.unwrapped.ram[0x075c] + 1
+
+    def _get_time(self):
+        """Get the current game time."""
+        time_digits = self.env.unwrapped.ram[0x07f8:0x07fb]
+        return int(''.join(map(str, filter(lambda x: x != 0, time_digits))) or '400')
+
     def reset(self):
         """Reset the environment and return the initial observation with instructions."""
-        # Call the parent reset method
-        initial_state = super().reset()
+        # Call the underlying reset method
+        initial_state = self.env.reset()
         
         # Reset tracking variables
-        self._x_position_last = self.ram[0x6d] * 0x100 + self.ram[0x86]
-        self._time_last = int(''.join(map(str, filter(lambda x: x != 0, self.ram[0x07f8:0x07fb]))) or '400')
+        self._x_position_last = self.env.unwrapped.ram[0x6d] * 0x100 + self.env.unwrapped.ram[0x86]
+        self._time_last = self._get_time()
         self.last_action_info = "No actions executed yet."
         self.total_reward = 0
         
         # Add instructions to the observation
         instructions = """
 Action format: Submit actions in square brackets like [a] or [r].
-You can submit multiple actions simultaneously: [l] [a] (jump left)
-You can also submit action sequences: [r] + [r] + [r] [a] (move right twice, then jump right)
+You can submit multiple actions simultaneously: [r] [a] (equivalent to [ra])
+You can also submit action sequences: [r] + [r] + [ra] (move right twice, then jump right)
 
 Available actions:
 - [a]: Jump (A button)
@@ -477,12 +181,13 @@ Available actions:
 - [r]: Move right
 - [n]: No operation
 
-Common combinations:
-- Jump right: [r] [a]
-- Run right: [r] [b]
-- Jump while running right: [r] [a] [b]
-- Jump left: [l] [a]
-- Run left: [l] [b]
+Combinations (you can also use these directly):
+- [ra]: Jump right (right + A)
+- [rb]: Run right (right + B)
+- [rab]: Jump while running right (right + A + B)
+- [la]: Jump left (left + A)
+- [lb]: Run left (left + B)
+- [lab]: Jump while running left (left + A + B)
         """
         
         # Return observation with visuals and text
@@ -494,149 +199,245 @@ Common combinations:
     def step(self, action_string):
         """
         Process action string, execute actions, and return the result.
-        The game will continue running even without explicit actions.
         
         Args:
             action_string (str): A string containing actions in [x] format
-        
+            
         Returns:
             tuple: (observation, reward, done, info)
         """
         # Extract actions using regex
         action_groups = re.findall(r'\[(.[^\]]*)\]', action_string.lower())
         
-        # Process the actions
-        if not action_groups:
+        # Special handling for start button (not in our regular action space)
+        if '[start]' in action_string.lower():
+            print("Pressing START button...")
+            # START button is bit 3 (value 8) in NES controller
+            self.env.step(8)  # Press START
+            # Get the screen observation directly without using private methods
+            state = self.env.render(mode='rgb_array')
+            self.env.step(0)  # Release all buttons
+            
+            reward = 0
+            done = False
+            info = {}
+            self.last_action_info = "Executed START button press"
+        # Process the regular actions
+        elif not action_groups:
             self.last_action_info = "No actions were executed because none were provided in the [x] format."
             # Just advance the frame with no action (game continues running)
-            state, reward, done, info = self._step_game_with_no_action()
+            state, reward, done, info = self._step_with_action(0)  # NOOP
         else:
             total_reward = 0
             executed_actions = []
+
+            # execute all submitted actions in the env
+            # Step the environment with the action
+
+            legal_bytes = [
+                0b10000001, # ('r', 'a'),
+                0b10000010, # ('r', 'b'),
+                0b10000011, # ('r', 'a', 'b'),
+                0b01000001, # ('l', 'a'),
+                0b01000010, # ('l', 'b'),
+                0b01000011, # ('l', 'a', 'b'),
+                0b00010000,
+                0b00100000,
+                0b01000000,
+                0b10000000,
+                0b00000001,
+                0b00000010,
+                0b00001000, # start
+                0b00000100, # select
+                0b00000000,
+            ]
+            # legal_combinations = [
+            #     ('r', 'a'),
+            #     ('r', 'b'),
+            #     ('r', 'a', 'b'),
+            #     ('l', 'a'),
+            #     ('l', 'b'),
+            #     ('l', 'a', 'b'),
+            # ]
+            action = 0b00000000
+            for a in action_groups:
+                action += self.ACTION_MAPPING[a]
             
-            # Split into time steps based on '+' delimiter
-            time_steps = ' '.join(action_groups).split('+')
+            if action in legal_bytes:
+                state, reward, done, info = self._step_with_action(action)
+                total_reward += reward
+            else:
+                state, reward, done, info = self._step_with_action(0)  # NOOP
+                print(f"Not a legal combination: {bin(action)}")
+
+
+            # ACTION_MAPPING = {
+            #     "u": 0b00010000,
+            #     "d": 0b00100000,
+            #     "l": 0b01000000,
+            #     "r": 0b10000000,
+            #     "a": 0b00000001,
+            #     "b": 0b00000010,
+            #     "o": 0b00001000, # start
+            #     "p": 0b00000100, # select
+            #     "n": 0b00000000,
+            # }
+
+
+
+            # # convert action groups to set
+            # if tuple(action_groups) in legal_combinations:
+            #     # sum up the bytes
+            #     action = 0b00000000
+
+            #     for a in action_groups:
+
+
+            # state, reward, done, info = self._step_with_action([self.ACTION_MAPPING[a] for a in action_groups])
+            # for action in action_groups:
+            #     state, reward, done, info = self._step_with_action(self.ACTION_MAPPING[action])
+
             
-            for step in time_steps:
-                # Get all actions at this time step (to be executed simultaneously)
-                simultaneous_actions = [a.strip() for a in step.split() if a.strip()]
+            # Print debug info
+
+            # print(f"Executing: {executed_actions[-1]} (action index: {action_idx})")
+                    
+            
+            # # Split into time steps based on '+' delimiter
+            # time_steps = ' '.join(action_groups).split('+')
+            
+            # for step in time_steps:
+            #     # Get all actions at this time step (to be executed simultaneously)
+            #     simultaneous_actions = [a.strip() for a in step.split() if a.strip()]
                 
-                if simultaneous_actions:
-                    # Convert to NES buttons for simultaneous press
-                    nes_buttons = []
-                    for action_code in simultaneous_actions:
-                        if action_code in self.ACTION_MAPPING:
-                            nes_buttons.append(self.ACTION_MAPPING[action_code])
+            #     if simultaneous_actions:
+            #         # Check if the combination is directly in our mapping
+            #         if len(simultaneous_actions) == 1 and simultaneous_actions[0] in self.ACTION_MAPPING:
+            #             # Single action that maps directly
+            #             action_idx = self.ACTION_MAPPING[simultaneous_actions[0]]
+            #             executed_actions.append(f"{simultaneous_actions[0]}")
+            #         else:
+            #             # Process multiple actions to determine the combined action
+
+            #             combined_action = self._combine_actions(simultaneous_actions)
+            #             if combined_action in self.ACTION_MAPPING:
+            #                 action_idx = self.ACTION_MAPPING[combined_action]
+            #                 executed_actions.append(f"{combined_action}")
+            #             else:
+            #                 # If the combination isn't valid, use NOOP
+            #                 action_idx = 0
+            #                 executed_actions.append("n (invalid combination)")
                     
-                    # Take the step with simultaneous button presses
-                    nes_action = self._convert_to_nes_action(nes_buttons)
-                    executed_actions.append(f"({'+'.join(simultaneous_actions)})")
+            #         # Step the environment with the action
+            #         state, reward, done, info = self._step_with_action(action_idx)
+            #         total_reward += reward
                     
-                    # Step the game with the action and apply frame skip based on mode
-                    state, reward, done, info = self._step_game_with_action(nes_action)
-                    total_reward += reward
+            #         # Print debug info
+            #         print(f"Executing: {executed_actions[-1]} (action index: {action_idx})")
                     
-                    # Break if the episode is done
-                    if done:
-                        break
+            #         # Break if the episode is done
+            #         if done:
+            #             break
             
             self.last_action_info = f"Executed actions: {' '.join(executed_actions)}"
             reward = total_reward
-        
-        # Update total reward
-        self.total_reward += reward
         
         # Return observation as a dictionary with visuals and text information
         observation = {
             'visual': state,
             'text': self._get_formatted_info_text()
         }
-        
+        time.sleep(0.03)
         return observation, reward, done, info
     
-    def _step_game_with_no_action(self):
-        """Step the game with no action (NOOP)."""
-        reward_sum = 0
-        done = False
-        info = None
-        
-        # Apply frame skip based on mode
-        for _ in range(self.frame_skip):
-            state, reward, done, info = super().step(0)  # NOOP action
-            reward_sum += reward
-            if done:
-                break
-        time.sleep(0.05)
-        return state, reward_sum, done, info
-    
-    def _step_game_with_action(self, action):
-        """Step the game with a specific action."""
-        reward_sum = 0
-        done = False
-        info = None
-        
-        # Apply frame skip based on mode
-        for _ in range(self.frame_skip):
-            state, reward, done, info = super().step(action)
-            reward_sum += reward
-            if done:
-                break
-        
-        time.sleep(0.05)
-        return state, reward_sum, done, info
-    
-    def _convert_to_nes_action(self, action_buttons):
+    def _combine_actions(self, actions):
         """
-        Convert action buttons to NES-py action bitmask.
+        Combine multiple action codes into a single composite action.
         
         Args:
-            action_buttons (list): List of button names to press
+            actions (list): List of action codes like ['r', 'a']
             
         Returns:
-            int: Action bitmask for NES-py
+            str: Combined action code like 'ra'
         """
-        # NES controller button mapping:
-        # 7 6 5 4 3 2 1 0
-        # A B S T U D L R
-        # (S=Select, T=Start, U=Up, D=Down, L=Left, R=Right)
+        # Special case handling - if conflicting directions, use the last one
+        directions = {'u', 'd', 'l', 'r'}
+        dir_actions = [a for a in actions if a in directions]
+        if len(dir_actions) > 1:
+            # Only keep the last direction
+            for d in dir_actions[:-1]:
+                actions.remove(d)
         
-        button_map = {
-            'A': 0x80,      # A button
-            'B': 0x40,      # B button
-            'SELECT': 0x20, # Select button
-            'START': 0x10,  # Start button
-            'up': 0x08,     # Up
-            'down': 0x04,   # Down
-            'left': 0x02,   # Left
-            'right': 0x01,  # Right
-            'NOOP': 0x00,   # No operation
-        }
+        # Combine the remaining actions
+        return ''.join(sorted(actions))
+    
+    def _step_with_action(self, action_idx):
+        """
+        Step the environment with the given action index.
         
-        # Start with no buttons pressed
-        action = 0x00
+        Args:
+            action_idx (int): Index into the ACTIONS list
+            
+        Returns:
+            tuple: (state, reward, done, info)
+        """
+        reward_sum = 0
+        done = False
+        info = None
         
-        # Add each button press to the action
-        for button in action_buttons:
-            if button in button_map:
-                action |= button_map[button]
+        # Apply frame skip based on mode
+        for _ in range(self.frame_skip):
+            state, reward, done, info = self.env.step(action_idx)
+            reward_sum += reward
+            if done:
+                break
         
-        return action
+        # Update total reward
+        self.total_reward += reward_sum
+        
+        return state, reward_sum, done, info
     
     def _get_formatted_info_text(self):
         """Format the game information into a readable text string."""
-        info = self._get_info()
+        # Get information from the underlying environment
+        ram = self.env.unwrapped.ram
+        x_pos = self._get_x_position()
+        y_pos = 255 - ram[0x03b8]
+        world = ram[0x075f] + 1
+        stage = ram[0x075c] + 1
+        time_digits = ram[0x07f8:0x07fb]
+        try:
+            time = int(''.join(map(str, filter(lambda x: x != 0, time_digits))) or '0')
+        except:
+            time = 0
+        coin_digits = ram[0x07ed:0x07ef]
+        try:
+            coins = int(''.join(map(str, filter(lambda x: x != 0, coin_digits))) or '0')
+        except:
+            coins = 0
+        life = ram[0x075a]
+        
         text = f"""
-World: {info['world']}-{info['stage']}
-Position: ({info['x_pos']}, {info['y_pos']})
-Coins: {info['coins']} | Lives: {info['life']} | Time: {info['time']}
-Score: {info['score']} | Total Reward: {self.total_reward:.2f}
-{info['last_action']}
+World: {world}-{stage}
+Position: ({x_pos}, {y_pos})
+Coins: {coins} | Lives: {life} | Time: {time}
+Total Reward: {self.total_reward:.2f}
+{self.last_action_info}
 """
         return text
+        
+    def _get_x_position(self):
+        """Get Mario's x position in the level."""
+        ram = self.env.unwrapped.ram
+        return ram[0x6d] * 0x100 + ram[0x86]
+    
+    def render(self, mode='human'):
+        """Render the environment."""
+        return self.env.render(mode=mode)
     
     def close(self):
         """Close the environment and return the total reward."""
-        super().close()
+        self.env.close()
         return self.total_reward
     
     def set_mode(self, mode):

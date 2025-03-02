@@ -229,58 +229,152 @@ class Agent(ABC):
         """
         pass
 
-class HumanAgent(Agent):
-    """Human agent class that directly captures keyboard input."""
+# class HumanAgent(Agent):
+#     """Human agent class that directly captures keyboard input."""
+    
+#     def __init__(self):
+#         """Initialize the human agent."""
+#         super().__init__()
+#         # Initialize pygame for key handling
+#         pygame.init()
+#         # Create a small window to capture key events
+#         self.screen = pygame.display.set_mode((1, 1))
+#         pygame.display.set_caption("Key Capture Window")
+        
+#         # Define key mappings
+#         self.key_mapping = {
+#             pygame.K_UP: 'u',     # Up
+#             pygame.K_DOWN: 'd',   # Down
+#             pygame.K_LEFT: 'l',   # Left
+#             pygame.K_RIGHT: 'r',  # Right
+#             pygame.K_a: 'a',      # Jump (A)
+#             pygame.K_b: 'b',      # Run (B)
+#         }
+        
+#     def __call__(self, observation: Union[str, Dict]) -> str:
+#         """
+#         Process keyboard input and return the action string.
+        
+#         Args:
+#             observation: The observation from the environment.
+            
+#         Returns:
+#             str: The action string based on active keys.
+#         """
+#         # Process pygame events
+#         pygame.event.pump()
+        
+#         # Get currently pressed keys
+#         pressed_keys = pygame.key.get_pressed()
+        
+#         # Convert pressed keys to action strings
+#         # actions = []
+#         actions = ""
+#         for key_code, action_code in self.key_mapping.items():
+#             if pressed_keys[key_code]:
+#                 actions += f" [{action_code}] "
+#                 # actions.append(f"[{action_code}]")
+        
+#         # If no keys are pressed, return no-op
+#         if actions == "":
+#             return "[n]"
+        
+#         print(actions)
+#         return " ".join(actions)
+
+class HumanAgent:
+    """Human agent class that captures keyboard input via pygame."""
     
     def __init__(self):
         """Initialize the human agent."""
-        super().__init__()
         # Initialize pygame for key handling
         pygame.init()
-        # Create a small window to capture key events
-        self.screen = pygame.display.set_mode((1, 1))
-        pygame.display.set_caption("Key Capture Window")
+        # Create a window to capture key events
+        self.screen = pygame.display.set_mode((320, 240))
+        pygame.display.set_caption("Mario Control Window - Focus here to control the game")
         
-        # Define key mappings
+        # Define basic key mappings
         self.key_mapping = {
             pygame.K_UP: 'u',     # Up
+            # pygame.K_w: 'u',      # Up alternative
             pygame.K_DOWN: 'd',   # Down
+            # pygame.K_s: 'd',      # Down alternative
             pygame.K_LEFT: 'l',   # Left
+            # pygame.K_a: 'l',      # Left alternative
             pygame.K_RIGHT: 'r',  # Right
+            # pygame.K_d: 'r',      # Right alternative
             pygame.K_a: 'a',      # Jump (A)
             pygame.K_b: 'b',      # Run (B)
+            pygame.K_p: 'o',      # select
+            pygame.K_o: 'p',      # start
+
+
         }
         
-    def __call__(self, observation: Union[str, Dict]) -> str:
+        # Draw control instructions on the window
+        self.draw_controls()
+    
+    def draw_controls(self):
+        """Draw control instructions on the pygame window."""
+        self.screen.fill((0, 0, 0))  # Black background
+        font = pygame.font.Font(None, 24)
+        
+        instructions = [
+            "CONTROLS:",
+            "Arrow keys or WASD: Movement",
+            "Z: Jump (A button)",
+            "X: Run (B button)",
+            "",
+            "Keep this window in focus",
+            "to control Mario"
+        ]
+        
+        y_pos = 30
+        for line in instructions:
+            text_surface = font.render(line, True, (255, 255, 255))
+            text_rect = text_surface.get_rect(center=(160, y_pos))
+            self.screen.blit(text_surface, text_rect)
+            y_pos += 30
+        
+        pygame.display.flip()
+    
+    def __call__(self, observation):
         """
-        Process keyboard input and return the action string.
+        Process keyboard input and return the action string with all pressed keys.
         
         Args:
             observation: The observation from the environment.
             
         Returns:
-            str: The action string based on active keys.
+            str: The action string based on all currently pressed keys.
         """
-        # Process pygame events
-        pygame.event.pump()
+        # Process pygame events to keep the window responsive
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                pygame.quit()
+                raise SystemExit("Game window closed")
+            
+            # Redraw if window is resized or needs update
+            if event.type == pygame.VIDEORESIZE:
+                self.draw_controls()
         
         # Get currently pressed keys
         pressed_keys = pygame.key.get_pressed()
         
         # Convert pressed keys to action strings
-        # actions = []
-        actions = ""
+        actions = []
         for key_code, action_code in self.key_mapping.items():
             if pressed_keys[key_code]:
-                actions += f" [{action_code}] "
-                # actions.append(f"[{action_code}]")
+                actions.append(f"[{action_code}]")
         
         # If no keys are pressed, return no-op
-        if actions == "":
+        if not actions:
+            # return "[start]"
             return "[n]"
         
-        print(actions)
-        return " ".join(actions)
+        action_str = " ".join(actions)
+        print(f"Action: {action_str}")
+        return action_str
 # class HumanAgent(Agent):
 #     """Human agent class that directly captures keyboard input using terminal input."""
     
