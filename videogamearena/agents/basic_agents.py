@@ -5,6 +5,17 @@ from abc import ABC, abstractmethod
 from typing import Optional, Dict, Any, Union
 import pygame
 
+import os
+import re
+import time
+import threading
+import numpy as np
+from abc import ABC, abstractmethod
+from typing import Optional, Dict, Any, Union
+import queue
+
+
+
 class Agent(ABC):
     """Abstract base class for agents interacting with the environment."""
     
@@ -118,8 +129,10 @@ class HumanAgent:
 
         
 
+
+
 class OpenRouterAgent(Agent):
-    """Agent class using the OpenRouter API to generate responses."""
+    """Agent class using the OpenRouter API to generate responses in a continuous background loop."""
     
     STANDARD_GAME_PROMPT = """
     You are playing Super Mario Bros. Control Mario to complete the level.
@@ -138,16 +151,20 @@ class OpenRouterAgent(Agent):
     You can sequence actions: [r] + [r] + [r] [a] (move right twice, then jump right)
     
     Focus on making progress through the level.
+    Respond ONLY with actions in the [x] format.
+    If you're not sure what to do, just return [n] for no operation.
     """
     
-    def __init__(self, model_name: str, system_prompt: Optional[str] = None, verbose: bool = False, **kwargs):
+    def __init__(self, model_name: str, system_prompt: Optional[str] = None, 
+                 verbose: bool = False, update_interval: float = 0.1, **kwargs):
         """
-        Initialize the OpenRouter agent.
+        Initialize the OpenRouter agent with continuous background processing.
 
         Args:
             model_name (str): The name of the model.
             system_prompt (Optional[str]): The system prompt to use.
             verbose (bool): If True, additional debug info will be printed.
+            update_interval (float): How often to check for new observations (seconds).
             **kwargs: Additional keyword arguments to pass to the OpenAI API call.
         """
         super().__init__()
@@ -155,7 +172,20 @@ class OpenRouterAgent(Agent):
         self.verbose = verbose 
         self.system_prompt = system_prompt or self.STANDARD_GAME_PROMPT
         self.kwargs = kwargs
-
+        self.update_interval = update_interval
+        
+        # Initialize the current action to no-op
+        self.current_action = "[n]"
+        
+        # Set up threading components
+        self.observation_queue = queue.Queue(maxsize=1)
+        self.stop_event = threading.Event()
+        self.processing_thread = None
+        self.is_thinking = False
+        
+        # Valid action keys for parsing responses
+        self.valid_actions = ['a', 'b', 'u', 'd', 'l', 'r', 'n', 'o', 'p']
+        
         try:
             from openai import OpenAI
         except ImportError:
@@ -171,6 +201,76 @@ class OpenRouterAgent(Agent):
         
         self.client = OpenAI(base_url="https://openrouter.ai/api/v1", api_key=api_key)
         
+        # Start the background processing thread
+        self._start_background_thread()
+        
+    def _start_background_thread(self):
+        """Start the background thread for continuous processing."""
+        self.processing_thread = threading.Thread(target=self._background_processing_loop, daemon=True)
+        self.processing_thread.start()
+        if self.verbose:
+            print("Background processing thread started")
+        
+    def _background_processing_loop(self):
+        """Continuously process observations in the background."""
+        while not self.stop_event.is_set():
+            try:
+                # Check if there's a new observation in the queue (non-blocking)
+                try:
+                    observation = self.observation_queue.get(block=False)
+                    if self.verbose:
+                        print("New observation received")
+                    
+                    # Set thinking flag
+                    self.is_thinking = True
+                    
+                    # Process the observation and update current_action
+                    try:
+                        raw_response = self._retry_request(observation)
+                        action_str = self._parse_actions(raw_response)
+                        
+                        # Update the current action
+                        if action_str:
+                            # each "button" can at most be pressed once
+                            actual_action_str = ""
+                            for la in self.valid_actions:
+                                if la in action_str and la not in actual_action_str:
+                                    actual_action_str += f"[{la}]"
+                            action_str = actual_action_str
+                            print(f"Action str: {action_str}")
+                            self.current_action = action_str
+                        else:
+                            self.current_action = "[n]"
+                            
+                        if self.verbose:
+                            print(f"Updated action: {self.current_action}")
+                    except Exception as e:
+                        print(f"Error processing observation: {e}")
+                        # Don't update current_action on error, keep using the previous one
+                    
+                    # Clear thinking flag
+                    self.is_thinking = False
+                    
+                except queue.Empty:
+                    # No new observation, continue loop
+                    pass
+                
+                # Sleep briefly to avoid busy waiting
+                time.sleep(self.update_interval)
+                
+            except Exception as e:
+                print(f"Error in background thread: {e}")
+                # Sleep briefly to avoid spamming errors
+                time.sleep(1)
+    
+    def stop(self):
+        """Stop the background processing thread."""
+        self.stop_event.set()
+        if self.processing_thread:
+            self.processing_thread.join(timeout=2)
+            if self.verbose:
+                print("Background processing thread stopped")
+    
     def _make_request(self, observation: Union[str, Dict]) -> str:
         """Make a single API request to OpenRouter and return the generated message."""
         # Process observation if it's a dictionary
@@ -251,7 +351,7 @@ class OpenRouterAgent(Agent):
             try:
                 response = self._make_request(observation)
                 if self.verbose:
-                    print(f"\nResponse: {response}")
+                    print(f"\nModel Output: {response}")
                 return response
 
             except Exception as e:
@@ -261,14 +361,58 @@ class OpenRouterAgent(Agent):
                     time.sleep(delay)
         raise last_exception
 
+    def _parse_actions(self, response_text: str) -> str:
+        """
+        Parse the model's response to extract valid action commands.
+        
+        Args:
+            response_text (str): The raw response from the model
+            
+        Returns:
+            str: Formatted action string with valid actions in [x] format
+        """
+        # Extract all actions in [x] format using regex
+        action_groups = re.findall(r'\[(.[^\]]*)\]', response_text.lower())
+        
+        # Filter to valid actions only
+        valid_action_groups = []
+        for action_group in action_groups:
+            # For each character in the action group, check if it's valid
+            valid_chars = [c for c in action_group if c in self.valid_actions]
+            if valid_chars:
+                valid_action_groups.append(f"[{''.join(valid_chars)}]")
+        
+        # Join all valid actions with spaces
+        return " ".join(valid_action_groups)
+
     def __call__(self, observation: Union[str, Dict]) -> str:
         """
         Process the observation using the OpenRouter API and return the action.
+        This method only updates the observation queue and returns the current action.
 
         Args:
             observation: The input to process.
 
         Returns:
-            str: The generated response.
+            str: The current action string.
         """
-        return self._retry_request(observation)
+        # Update the observation queue (non-blocking, will replace any existing observation)
+        try:
+            # If queue is full, remove the old observation and add the new one
+            if self.observation_queue.full():
+                try:
+                    self.observation_queue.get_nowait()
+                except queue.Empty:
+                    pass
+            # Put the new observation in the queue
+            self.observation_queue.put_nowait(observation)
+        except queue.Full:
+            if self.verbose:
+                print("Queue is full, skipping observation update")
+        
+        # Add visual indicator if model is thinking
+        if self.is_thinking and self.verbose:
+            print("🤔 Thinking...")
+            
+        # Always return the current action immediately
+        return self.current_action
