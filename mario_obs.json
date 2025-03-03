@@ -1,0 +1,23 @@
+[
+    {
+        "frame": 0,
+        "image_path": "mario_frames/frame_0.jpg",
+        "info": {
+            "text": "Which buttons would you like to press?"
+        }
+    },
+    {
+        "frame": 1,
+        "image_path": "mario_frames/frame_1.jpg",
+        "info": {
+            "text": "Which buttons would you like to press?"
+        }
+    },
+    {
+        "frame": 2,
+        "image_path": "mario_frames/frame_2.jpg",
+        "info": {
+            "text": "Which buttons would you like to press?"
+        }
+    }
+]

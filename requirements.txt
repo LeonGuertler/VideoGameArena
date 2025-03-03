@@ -1,1 +1,1 @@
-nes-py
+stable-retro
