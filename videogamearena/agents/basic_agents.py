@@ -13,7 +13,8 @@ import numpy as np
 from abc import ABC, abstractmethod
 from typing import Optional, Dict, Any, Union
 import queue
-
+import matplotlib.pyplot as plt
+from PIL import Image
 
 
 class Agent(ABC):
@@ -134,26 +135,58 @@ class HumanAgent:
 class OpenRouterAgent(Agent):
     """Agent class using the OpenRouter API to generate responses in a continuous background loop."""
     
+    # STANDARD_GAME_PROMPT = """
+    # You are playing Super Mario Bros. Control Mario to complete the level.
+    # Use the [x] action format to control Mario.
+    
+    # Available actions:
+    # - [a]: Jump (A button)
+    # - [b]: Run (B button)
+    # - [u]: Move up (for climbing)
+    # - [d]: Move down (for pipes)
+    # - [l]: Move left
+    # - [r]: Move right
+    # - [n]: No operation
+    
+    # You can combine actions: [r] [a] (jump right)
+    
+    # Focus on making progress through the level.
+    # Respond ONLY with actions in the [x] format.
+    # If you're not sure what to do, just return [n] for no operation.
+    # Only submit the action for the buttons you want to press in this step. You cannot return lists of actions.
+    # For example, you can press '[a] [r]' you can jump over enemies.
+    # """
     STANDARD_GAME_PROMPT = """
     You are playing Super Mario Bros. Control Mario to complete the level.
     Use the [x] action format to control Mario.
     
     Available actions:
     - [a]: Jump (A button)
-    - [b]: Run (B button)
-    - [u]: Move up (for climbing)
-    - [d]: Move down (for pipes)
     - [l]: Move left
     - [r]: Move right
     - [n]: No operation
     
     You can combine actions: [r] [a] (jump right)
-    You can sequence actions: [r] + [r] + [r] [a] (move right twice, then jump right)
     
     Focus on making progress through the level.
-    Respond ONLY with actions in the [x] format.
-    If you're not sure what to do, just return [n] for no operation.
+    For example, you can press '[a] [r]' you can jump over enemies.
     """
+    # STANDARD_GAME_PROMPT = """
+    # You are playing Super Mario Bros. Control Mario to complete the level.
+    # Use the [x] action format to control Mario.
+    
+    # Available actions:
+    # - '[jump]'
+    # - '[right]'
+    # - '[left]'
+    # - '[none]'
+    
+    # You can combine actions: '[rump] [right]' (jump right)
+    
+    # Focus on making progress through the level.
+    # """
+    # If you hold [a], mario will make one big jumo. To jump again, you need to let go of [a] first.
+    # You will need to submit one action without [a] to be able to jump again. For example '[r]'.
     
     def __init__(self, model_name: str, system_prompt: Optional[str] = None, 
                  verbose: bool = False, update_interval: float = 0.1, **kwargs):
@@ -176,16 +209,20 @@ class OpenRouterAgent(Agent):
         
         # Initialize the current action to no-op
         self.current_action = "[n]"
+        self.just_updated = False
         
         # Set up threading components
         self.observation_queue = queue.Queue(maxsize=1)
         self.stop_event = threading.Event()
         self.processing_thread = None
         self.is_thinking = False
+        self.prev_img = None
+
+        self.prev_actions = ""
         
         # Valid action keys for parsing responses
         self.valid_actions = ['a', 'b', 'u', 'd', 'l', 'r', 'n', 'o', 'p']
-        
+        self.action_history = "Action History: "
         try:
             from openai import OpenAI
         except ImportError:
@@ -228,17 +265,27 @@ class OpenRouterAgent(Agent):
                     try:
                         raw_response = self._retry_request(observation)
                         action_str = self._parse_actions(raw_response)
-                        
+                        print(action_str)
+                        self.action_history += f"\n{action_str}"
                         # Update the current action
                         if action_str:
                             # each "button" can at most be pressed once
                             actual_action_str = ""
+                            # if "[jump]" in action_str or "[up]" in action_str:
+                            #     actual_action_str += "[a]"
+                            # if "[right]" in action_str:
+                            #     actual_action_str += "[r]"
+                            # if "[left]" in action_str:
+                            #     actual_action_str += "[l]"
+                            # if "[none]" in action_str:
+                            #     actual_action_str += "[n]"
                             for la in self.valid_actions:
                                 if la in action_str and la not in actual_action_str:
                                     actual_action_str += f"[{la}]"
                             action_str = actual_action_str
                             print(f"Action str: {action_str}")
                             self.current_action = action_str
+                            self.just_updated = True
                         else:
                             self.current_action = "[n]"
                             
@@ -284,14 +331,22 @@ class OpenRouterAgent(Agent):
                 # Convert numpy array to PIL Image
                 image = Image.fromarray(observation['visual'].astype(np.uint8))
                 
+                # print(image)
+                # # Display the image inline
+                # plt.imshow(image)
+                # plt.axis('off')  # Hide axis if you like
+                # plt.show()
+
                 # Save image to bytes buffer
                 buffer = io.BytesIO()
                 image.save(buffer, format="PNG")
                 
                 # Encode to base64
                 img_str = base64.b64encode(buffer.getvalue()).decode('utf-8')
-                
                 # Prepare the content for multimodal models
+
+                if self.prev_img is None:
+                    self.prev_img = img_str
                 content = [
                     {
                         "type": "image_url",
@@ -300,10 +355,18 @@ class OpenRouterAgent(Agent):
                         }
                     },
                     {
+                        "type": "image_url",
+                        "image_url": {
+                            "url": f"data:image/png;base64,{self.prev_img}"
+                        }
+                    },
+                    {
                         "type": "text",
                         "text": observation.get('text', '')
+                        # "text": self.prev_actions + "\n" +observation.get('text', '')
                     }
                 ]
+                self.prev_img = img_str
             else:
                 # Text-only observation
                 content = observation.get('text', '')
@@ -312,6 +375,10 @@ class OpenRouterAgent(Agent):
             content = observation
         
         # Prepare messages for the API
+        print("#"*20)
+        print(self.system_prompt)
+        # print(content[0]["text"])
+        print("#"*20)
         if isinstance(content, list):
             messages = [
                 {"role": "system", "content": self.system_prompt},
@@ -331,6 +398,8 @@ class OpenRouterAgent(Agent):
             stop=None,
             **self.kwargs
         )
+
+        self.prev_actions += f"\n{response.choices[0].message.content.strip()}"
         
         return response.choices[0].message.content.strip()
 
@@ -413,6 +482,9 @@ class OpenRouterAgent(Agent):
         # Add visual indicator if model is thinking
         if self.is_thinking and self.verbose:
             print("🤔 Thinking...")
-            
+        
+        # if self.just_updated:
+        #     self.just_updated = False
+        #     return '[n]'
         # Always return the current action immediately
         return self.current_action

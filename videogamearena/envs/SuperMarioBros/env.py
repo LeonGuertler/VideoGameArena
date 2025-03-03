@@ -6,71 +6,6 @@ from nes_py import NESEnv
 import numpy as np
 
 
-def decode_target(target, lost_levels):
-    """
-    Return the target area for target world and target stage.
-
-    Args:
-        target_world (None, int): the world to target
-        target_stage (None, int): the stage to target
-        lost_levels (bool): whether to use lost levels game
-
-    Returns (int):
-        the area to target to load the target world and stage
-
-    """
-    # Type and value check the lost levels parameter
-    if not isinstance(lost_levels, bool):
-        raise TypeError('lost_levels must be of type: bool')
-    # if there is no target, the world, stage, and area targets are all None
-    if target is None:
-        return None, None, None
-    elif not isinstance(target, tuple):
-        raise TypeError('target must be  of type tuple')
-    # unwrap the target world and stage
-    target_world, target_stage = target
-    # Type and value check the target world parameter
-    if not isinstance(target_world, int):
-        raise TypeError('target_world must be of type: int')
-    else:
-        if lost_levels:
-            if not 1 <= target_world <= 12:
-                raise ValueError('target_world must be in {1, ..., 12}')
-        elif not 1 <= target_world <= 8:
-            raise ValueError('target_world must be in {1, ..., 8}')
-    # Type and value check the target level parameter
-    if not isinstance(target_stage, int):
-        raise TypeError('target_stage must be of type: int')
-    else:
-        if not 1 <= target_stage <= 4:
-            raise ValueError('target_stage must be in {1, ..., 4}')
-
-    # no target are defined for no target world or stage situations
-    if target_world is None or target_stage is None:
-        return None
-    # setup target area if target world and stage are specified
-    target_area = target_stage
-    # setup the target area depending on whether this is SMB 1 or 2
-    if lost_levels:
-        # setup the target area depending on the target world and stage
-        if target_world in {1, 3}:
-            if target_stage >= 2:
-                target_area = target_area + 1
-        elif target_world >= 5:
-            # TODO: figure out why all worlds greater than 5 fail.
-            # target_area = target_area + 1
-            # for now just raise a value error
-            worlds = set(range(5, 12 + 1))
-            msg = 'lost levels worlds {} not supported'.format(worlds)
-            raise ValueError(msg)
-    else:
-        # setup the target area depending on the target world and stage
-        if target_world in {1, 2, 4, 7}:
-            if target_stage >= 2:
-                target_area = target_area + 1
-
-    return target_world, target_stage, target_area
-
 
 # create a dictionary mapping value of status register to string names
 _STATUS_MAP = defaultdict(lambda: 'fireball', {0:'small', 1: 'tall'})
@@ -136,12 +71,11 @@ class SuperMarioBrosEnv(NESEnv):
         'super-slow': 5    # 5 fps - very slow for detailed analysis
     }
 
-    def __init__(self, rom_mode='vanilla', lost_levels=False, target=None, speed_mode='human'):
+    def __init__(self, speed_mode='human'):
         """
         Initialize a new Super Mario Bros environment.
 
         Args:
-            rom_mode (str): the ROM mode to use when loading ROMs from disk
             lost_levels (bool): whether to load the ROM with lost levels.
                 - False: load original Super Mario Bros.
                 - True: load Super Mario Bros. Lost Levels
@@ -160,8 +94,9 @@ class SuperMarioBrosEnv(NESEnv):
         # initialize the super object with the ROM path
         super(SuperMarioBrosEnv, self).__init__(rom)
         # set the target world, stage, and area variables
-        target = decode_target(target, lost_levels)
-        self._target_world, self._target_stage, self._target_area = target
+        self._target_world = None 
+        self._target_stage = None 
+        self._target_area = None
         # setup a variable to keep track of the last frames time
         self._time_last = 0
         # setup a variable to keep track of the last frames x position
@@ -171,13 +106,6 @@ class SuperMarioBrosEnv(NESEnv):
         self.speed_mode = speed_mode
         self.target_frame_time = 1.0 / self.FPS[speed_mode]
         self.last_frame_time = time.time()
-
-
-        # Add tracking for held buttons
-        self.last_action_byte = 0
-        self.held_frames = 0
-        self.jump_state = 0  # 0: not jumping, 1: button down, 2: button up
-
 
         # Setup UI tracking variables
         self.last_action_info = "No actions executed yet."
@@ -543,48 +471,6 @@ class SuperMarioBrosEnv(NESEnv):
 
         return 0
 
-    # MARK: Override step and reset methods
-
-    # def step(self, action):
-    #     """
-    #     Step the environment with the given action.
-        
-    #     Args:
-    #         action: The action can be either:
-    #                - An integer representing the action directly
-    #                - A string formatted like "[r][a]" to perform right+A
-        
-    #     Returns:
-    #         A tuple of (observation, reward, done, info)
-    #     """
-    #     # Start timing this frame
-    #     frame_start_time = time.time()
-        
-    #     # If action is a string, parse it
-    #     if isinstance(action, str):
-    #         action = self.parse_action_string(action)
-        
-    #     # Perform the action in the environment
-    #     observation, reward, done, info = super().step(action)
-        
-    #     # Update the total reward
-    #     self.total_reward += reward
-        
-    #     # Add additional information to the info dict
-    #     info.update({
-    #         'total_reward': self.total_reward,
-    #         'speed_mode': self.speed_mode,
-    #         'last_action': self.last_action_info,
-    #     })
-        
-    #     # Throttle the frame rate based on the selected speed mode
-    #     fps_info = self._throttle_fps()
-    #     info.update(fps_info)
-        
-    #     return observation, done, info
-    #     # return observation, reward, done, info
-    
-
     def step(self, action):
         """
         Step the environment with the given action.
@@ -598,51 +484,15 @@ class SuperMarioBrosEnv(NESEnv):
             A dictionary containing game state information
         """
         # Start timing this frame
+        # super().step(0b00000000)
         frame_start_time = time.time()
         
         # If action is a string, parse it
         if isinstance(action, str):
             action = self.parse_action_string(action)
         
-        # Special handling for continuous jumping
-        action_to_use = action
-        
-        # Check if the A button is held down with direction
-        a_button = action & self.BYTE_MAPPING['a']
-        direction = action & (self.BYTE_MAPPING['r'] | self.BYTE_MAPPING['l'])
-        
-        if a_button and direction:
-            # If this is the same action as last time, we're holding the buttons
-            if action == self.last_action_byte:
-                self.held_frames += 1
-                
-                # Jump cycle: every 10 frames, release and re-press the A button
-                # This simulates the user quickly pressing A repeatedly while holding direction
-                if self.held_frames % 8 == 0:
-                    if self.jump_state == 0:
-                        # Keep A button pressed
-                        self.jump_state = 1
-                    elif self.jump_state == 1:
-                        # Release A button for one frame but keep direction
-                        action_to_use = direction  # Remove A button
-                        self.jump_state = 2
-                    else:  # jump_state == 2
-                        # Press A button again
-                        self.jump_state = 0
-            else:
-                # New action, reset counters
-                self.held_frames = 0
-                self.jump_state = 0
-        else:
-            # Not jumping with direction, reset jumping state
-            self.held_frames = 0
-            self.jump_state = 0
-        
-        # Remember this action for next frame
-        self.last_action_byte = action
-        
         # Perform the action in the environment
-        observation, reward, done, info = super().step(action_to_use)
+        observation, reward, done, info = super().step(action)
         
         # Update the total reward
         self.total_reward += reward
@@ -660,7 +510,16 @@ class SuperMarioBrosEnv(NESEnv):
         
         obs = {
             "visual": observation,
-            "text": "Go win!"
+            "text": (
+                "Please provide your next action(s) in squared brackets. "
+                "Any text you return that is not in squared brackets will "
+                "be shown to you after, but not submitted to the environment. "
+                "If you don't return any actions in squared brackets, no actions are executed."
+            )
+        }
+        obs = {
+            "visual": observation,
+            "text": "Which buttons would you like to press?"
         }
         return obs, done, info
 
@@ -819,6 +678,7 @@ Frame Time: {fps_info['frame_time_ms']:.1f}ms, Sleep: {fps_info['sleep_time_ms']
     
     def get_action_instructions(self):
         """Return formatted instructions for the user on how to use actions."""
+        return ""
         return """
 Action format: Submit actions in square brackets like [a] or [r].
 You can submit multiple actions simultaneously: [r] [a] (equivalent to [ra])
