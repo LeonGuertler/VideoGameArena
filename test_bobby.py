@@ -13,7 +13,7 @@ import videogamearena as vga
 agent = vga.agents.HumanAgent()
 
 # env = SuperMarioBrosEnv(speed_mode="human")
-env = vga.make("SuperMarioBros-v0")
+env = vga.make("MortalKombatII-v0")
 
 obs = env.reset()
 done = False

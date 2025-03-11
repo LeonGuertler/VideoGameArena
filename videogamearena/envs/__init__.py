@@ -5,6 +5,9 @@ from videogamearena.envs.registration import register
 # AirstrikerGenesis (single-player)
 register(id="AirstrikerGenesis-v0", entry_point="videogamearena.envs.AirstrikerGenesis.env:AirstrikerGenesisEnv")
 
+# MortalKombat (single-player)
+register(id="MortalKombatII-v0", entry_point="videogamearena.envs.MortalKombatII.env:MortalKombatIIEnv")
+
 # StreetFighter2 (single-player)
 register(id="StreetFighterII-v0", entry_point="videogamearena.envs.StreetFighterII.env:StreetFighterIIEnv")
 
