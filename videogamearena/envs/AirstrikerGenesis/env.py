@@ -4,22 +4,18 @@ import time
 import numpy as np
 import retro  # Using gym-retro
 
-class SuperMarioBrosEnv:
-    """A simplified environment for playing Super Mario Bros with gym-retro."""
+class AirstrikerGenesisEnv:
+    """A simplified environment for playing Airstriker-Genesis with gym-retro."""
     
-    # Button mapping for gym-retro
-    BUTTONS = ['B', 'NULL', 'SELECT', 'START', 'UP', 'DOWN', 'LEFT', 'RIGHT', 'A']
+    # Button mapping for Sega Genesis in gym-retro (12 buttons total)
+    BUTTONS = ['B', 'A', 'MODE', 'START', 'UP', 'DOWN', 'LEFT', 'RIGHT', 'C', 'Y', 'X', 'Z']
     
-    # Mapping from shorthand to button indices
+    # Mapping from shorthand to button indices (simplified for Airstriker)
     BUTTON_MAP = {
-        'u': 4,     # UP
-        'd': 5,     # DOWN
         'l': 6,     # LEFT
         'r': 7,     # RIGHT
-        'a': 8,     # A button
-        'b': 0,     # B button
+        'f': 0,     # FIRE (B button)
         'o': 3,     # START
-        'p': 2,     # SELECT
         'n': None,  # No operation
     }
 
@@ -32,7 +28,7 @@ class SuperMarioBrosEnv:
 
     def __init__(self, speed_mode='human'):
         """
-        Initialize a new Super Mario Bros environment using gym-retro.
+        Initialize a new Airstriker-Genesis environment using gym-retro.
 
         Args:
             speed_mode (str): 'human', 'slow', or 'super-slow'
@@ -40,8 +36,8 @@ class SuperMarioBrosEnv:
         if speed_mode not in self.FPS:
             raise ValueError(f"Speed mode must be one of {list(self.FPS.keys())}")
         
-        self.env = retro.make(game='SuperMarioBros-Nes')  # Load SMB
-        print("Successfully loaded SuperMarioBros-Nes")
+        self.env = retro.make(game='Airstriker-Genesis')  # Load Airstriker-Genesis
+        print("Successfully loaded Airstriker-Genesis")
         
         self.speed_mode = speed_mode
         self.target_frame_time = 1.0 / self.FPS[speed_mode]
@@ -145,36 +141,30 @@ class SuperMarioBrosEnv:
     def get_action_instructions(self):
         """Return formatted action instructions."""
         return """
-Action format: Submit actions in square brackets like [a] or [r].
-You can submit multiple actions simultaneously: [r] [a] (equivalent to [ra])
+Action format: Submit actions in square brackets like [f] or [r].
+You can submit multiple actions simultaneously: [r] [f] (equivalent to [rf])
 
 Available actions:
-- [a]: Jump (A button)
-- [b]: Run (B button)
-- [u]: Move up (for climbing)
-- [d]: Move down (for pipes)
+- [f]: Fire (B button)
 - [l]: Move left
 - [r]: Move right
 - [o]: Start button
-- [p]: Select button
 - [n]: No operation
 
 Common combinations:
-- [ra]: Jump right
-- [rb]: Run right
-- [rab]: Jump while running right
-- [la]: Jump left
-- [lb]: Run left
+- [rf]: Move right and fire
+- [lf]: Move left and fire
 """
 
-# Example usage
+# # Example usage
 # if __name__ == "__main__":
-#     env = SuperMarioBrosEnv(speed_mode="slow")
+#     env = AirstrikerGenesisEnv(speed_mode="slow")
     
 #     obs = env.reset()
     
 #     for _ in range(100):
-#         obs, done, info = env.step("[r]")  # Move right
+#         obs, done, info = env.step("[rf]")  # Move right and fire
+#         env.render()
 #         if done:
 #             break
     

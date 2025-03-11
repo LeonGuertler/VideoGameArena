@@ -4,22 +4,25 @@ import time
 import numpy as np
 import retro  # Using gym-retro
 
-class SuperMarioBrosEnv:
-    """A simplified environment for playing Super Mario Bros with gym-retro."""
+class StreetFighterIIEnv:
+    """A simplified environment for playing Street Fighter II: SCE with gym-retro."""
     
-    # Button mapping for gym-retro
-    BUTTONS = ['B', 'NULL', 'SELECT', 'START', 'UP', 'DOWN', 'LEFT', 'RIGHT', 'A']
+    # Button mapping for Sega Genesis in gym-retro (12 buttons total)
+    BUTTONS = ['B', 'A', 'MODE', 'START', 'UP', 'DOWN', 'LEFT', 'RIGHT', 'C', 'Y', 'X', 'Z']
     
-    # Mapping from shorthand to button indices
+    # Mapping from shorthand to button indices (simplified for Street Fighter II)
     BUTTON_MAP = {
-        'u': 4,     # UP
-        'd': 5,     # DOWN
+        'u': 4,     # UP (jump)
+        'd': 5,     # DOWN (crouch)
         'l': 6,     # LEFT
         'r': 7,     # RIGHT
-        'a': 8,     # A button
-        'b': 0,     # B button
+        'lp': 0,    # Light Punch (B button)
+        'mp': 1,    # Medium Punch (A button)
+        'hp': 8,    # Heavy Punch (C button)
+        'lk': 10,   # Light Kick (X button)
+        'mk': 9,    # Medium Kick (Y button)
+        'hk': 11,   # Heavy Kick (Z button)
         'o': 3,     # START
-        'p': 2,     # SELECT
         'n': None,  # No operation
     }
 
@@ -32,7 +35,7 @@ class SuperMarioBrosEnv:
 
     def __init__(self, speed_mode='human'):
         """
-        Initialize a new Super Mario Bros environment using gym-retro.
+        Initialize a new Street Fighter II: SCE environment using gym-retro.
 
         Args:
             speed_mode (str): 'human', 'slow', or 'super-slow'
@@ -40,8 +43,8 @@ class SuperMarioBrosEnv:
         if speed_mode not in self.FPS:
             raise ValueError(f"Speed mode must be one of {list(self.FPS.keys())}")
         
-        self.env = retro.make(game='SuperMarioBros-Nes')  # Load SMB
-        print("Successfully loaded SuperMarioBros-Nes")
+        self.env = retro.make(game='StreetFighterIISpecialChampionEdition-Genesis')  # Load Street Fighter II
+        print("Successfully loaded StreetFighterIISpecialChampionEdition-Genesis")
         
         self.speed_mode = speed_mode
         self.target_frame_time = 1.0 / self.FPS[speed_mode]
@@ -86,9 +89,9 @@ class SuperMarioBrosEnv:
         
         buttons = [False] * len(self.BUTTONS)
         for group in action_groups:
-            for char in group:
-                if char in self.BUTTON_MAP and self.BUTTON_MAP[char] is not None:
-                    buttons[self.BUTTON_MAP[char]] = True
+            for action in re.findall(r'[a-z]{1,2}', group):  # Match 1-2 letter actions (e.g., 'lp', 'r')
+                if action in self.BUTTON_MAP and self.BUTTON_MAP[action] is not None:
+                    buttons[self.BUTTON_MAP[action]] = True
         
         self.last_action_info = f"Executed action: {''.join(action_groups)}"
         return buttons
@@ -98,7 +101,7 @@ class SuperMarioBrosEnv:
         start_action = [False] * len(self.BUTTONS)
         start_action[self.BUTTON_MAP['o']] = True  # Press START button
 
-        for _ in range(10):  # Repeat for 10 frames
+        for _ in range(20):  # Repeat for 20 frames (longer start sequence)
             self.env.step(start_action)  # Press START
             self.env.step([False] * len(self.BUTTONS))  # No action (NOOP)
             time.sleep(0.1)  # Delay to simulate human input
@@ -145,36 +148,39 @@ class SuperMarioBrosEnv:
     def get_action_instructions(self):
         """Return formatted action instructions."""
         return """
-Action format: Submit actions in square brackets like [a] or [r].
-You can submit multiple actions simultaneously: [r] [a] (equivalent to [ra])
+Action format: Submit actions in square brackets like [lp] or [r].
+You can submit multiple actions simultaneously: [r] [lp] (equivalent to [rlp])
 
 Available actions:
-- [a]: Jump (A button)
-- [b]: Run (B button)
-- [u]: Move up (for climbing)
-- [d]: Move down (for pipes)
+- [u]: Jump (Up)
+- [d]: Crouch (Down)
 - [l]: Move left
 - [r]: Move right
+- [lp]: Light Punch (B button)
+- [mp]: Medium Punch (A button)
+- [hp]: Heavy Punch (C button)
+- [lk]: Light Kick (X button)
+- [mk]: Medium Kick (Y button)
+- [hk]: Heavy Kick (Z button)
 - [o]: Start button
-- [p]: Select button
 - [n]: No operation
 
 Common combinations:
-- [ra]: Jump right
-- [rb]: Run right
-- [rab]: Jump while running right
-- [la]: Jump left
-- [lb]: Run left
+- [rlp]: Move right + Light Punch
+- [dlk]: Crouch + Light Kick
+- [uhp]: Jump + Heavy Punch
+- [rmk]: Move right + Medium Kick
 """
 
-# Example usage
+# # Example usage
 # if __name__ == "__main__":
-#     env = SuperMarioBrosEnv(speed_mode="slow")
+#     env = StreetFighterIIEnv(speed_mode="slow")
     
 #     obs = env.reset()
     
 #     for _ in range(100):
-#         obs, done, info = env.step("[r]")  # Move right
+#         obs, done, info = env.step("[rmk]")  # Move right + Medium Kick
+#         env.render()
 #         if done:
 #             break
     

@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 from typing import Any, Dict, List, Tuple, Optional, Callable
 
-from nes_py import NESEnv
+# from nes_py import NESEnv
 import random
 
 

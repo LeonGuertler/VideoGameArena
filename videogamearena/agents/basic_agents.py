@@ -59,6 +59,7 @@ class HumanAgent:
             pygame.K_b: 'b',      # Run (B)
             pygame.K_p: 'o',      # select
             pygame.K_o: 'p',      # start
+            pygame.K_f: 'f',      # fire
 
 
         }

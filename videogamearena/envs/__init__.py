@@ -1,12 +1,17 @@
 """ Register all environments """
 
-from textarena.envs.registration import register
+from videogamearena.envs.registration import register
 
+# AirstrikerGenesis (single-player)
+register(id="AirstrikerGenesis-v0", entry_point="videogamearena.envs.AirstrikerGenesis.env:AirstrikerGenesisEnv")
+
+# StreetFighter2 (single-player)
+register(id="StreetFighterII-v0", entry_point="videogamearena.envs.StreetFighterII.env:StreetFighterIIEnv")
 
 # SuperMarioBros (single-player)
-register(id="SuperMarioBros-v0", entry_point="textarena.envs.SuperMarioBros.env:SuperMarioBrosEnv", speed_mode="human")
-register(id="SuperMarioBros-v0-slow", entry_point="textarena.envs.SuperMarioBros.env:SuperMarioBrosEnv", speed_mode="slow")
-register(id="SuperMarioBros-v0-super-slow", entry_point="textarena.envs.SuperMarioBros.env:SuperMarioBrosEnv", speed_mode="super-slow")
+register(id="SuperMarioBros-v0", entry_point="videogamearena.envs.SuperMarioBros.env:SuperMarioBrosEnv", speed_mode="human")
+register(id="SuperMarioBros-v0-slow", entry_point="videogamearena.envs.SuperMarioBros.env:SuperMarioBrosEnv", speed_mode="slow")
+register(id="SuperMarioBros-v0-super-slow", entry_point="videogamearena.envs.SuperMarioBros.env:SuperMarioBrosEnv", speed_mode="super-slow")
 
 # Zelda (single-player)
-register(id="Zelda-v0", entry_point="textarena.envs.Zelda.env:ZeldaEnv")
+register(id="Zelda-v0", entry_point="videogamearena.envs.Zelda.env:ZeldaEnv")

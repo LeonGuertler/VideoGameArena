@@ -1,5 +1,6 @@
 from videogamearena.core import Env, Observation, Info
 from videogamearena.envs.registration import make, register, pprint_registry
+from videogamearena import agents
 
 
 __all__ = [

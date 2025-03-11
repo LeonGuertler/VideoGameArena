@@ -1,6 +1,5 @@
-# Assuming your ROM file is named super-mario-bros.nes
-# python3 -m retro.import videogamearena/envs/SuperMarioBros/super-mario-bros.nes
-python3 -m retro.import videogamearena/envs/SuperMarioBros/super-mario-bros.nes
-# python3 -m stable_retro.import
-# Alternative import approach
-# python3 -c "import retro; retro.data.merge_rom('videogamearena/envs/SuperMarioBros/super-mario-bros.nes')"
+## This script is used to setup the roms for the game
+## It is used to import the roms into the retro environment
+## The roms are stored in the videogamearena/roms directory
+
+$(which python) -m retro.import videogamearena/roms/
