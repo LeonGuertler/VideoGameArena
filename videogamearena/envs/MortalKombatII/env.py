@@ -2,52 +2,67 @@ import os
 import re
 import time
 import numpy as np
-import retro  # Using gym-retro
+import retro  # stable-retro
+
 
 class MortalKombatIIEnv:
-    """A simplified environment for playing Mortal Kombat II with gym-retro."""
+    """A simplified environment for Mortal Kombat II (Genesis) with stable-retro, supporting 2 players."""
     
-    # Button mapping for Sega Genesis in gym-retro (12 buttons total)
     BUTTONS = ['B', 'A', 'MODE', 'START', 'UP', 'DOWN', 'LEFT', 'RIGHT', 'C', 'Y', 'X', 'Z']
     
-    # Mapping from shorthand to button indices (simplified for Mortal Kombat II)
+    # Button map: explicit lowercase for P1 (0-11), uppercase for P2 (12-23)
     BUTTON_MAP = {
-        'u': 4,     # UP (jump)
-        'd': 5,     # DOWN (crouch)
+        # Player 1 (lowercase)
+        'u': 4,     # UP
+        'd': 5,     # DOWN
         'l': 6,     # LEFT
         'r': 7,     # RIGHT
-        'hp': 0,    # High Punch (B button)
-        'lp': 1,    # Low Punch (A button)
-        'hk': 8,    # High Kick (C button)
-        'lk': 10,   # Low Kick (X button)
-        'bl': 9,    # Block (Y button)
-        'o': 3,     # START
+        'a': 1,     # A button (Punch)
+        'b': 0,     # B button (Kick)
+        'c': 8,     # C button (Block)
+        'x': 10,    # X button (Special)
+        'y': 9,     # Y button (Special)
+        'z': 11,    # Z button (Special)
+        's': 3,     # START
+        'm': 2,     # MODE
         'n': None,  # No operation
+        
+        # Player 2 (uppercase, offset by +12)
+        'U': 16,    # UP
+        'D': 17,    # DOWN
+        'L': 18,    # LEFT
+        'R': 19,    # RIGHT
+        'A': 13,    # A button (Punch)
+        'B': 12,    # B button (Kick)
+        'C': 20,    # C button (Block)
+        'X': 22,    # X button (Special)
+        'Y': 21,    # Y button (Special)
+        'Z': 23,    # Z button (Special)
+        'S': 15,    # START
+        'M': 14,    # MODE
+        'N': None,  # No operation
     }
 
-    # Frame rate constants
     FPS = {
         'human': 60,
         'slow': 30,
         'super-slow': 10
     }
 
-    def __init__(self, speed_mode='human'):
-        """
-        Initialize a new Mortal Kombat II environment using gym-retro.
-
-        Args:
-            speed_mode (str): 'human', 'slow', or 'super-slow'
-        """
+    def __init__(self, speed_mode='human', players=1):
         if speed_mode not in self.FPS:
             raise ValueError(f"Speed mode must be one of {list(self.FPS.keys())}")
+        if players not in [1, 2]:
+            raise ValueError("Players must be 1 or 2")
         
-        self.env = retro.make(game='MortalKombatII-Genesis')  # Load Mortal Kombat II
-        print("Successfully loaded MortalKombatII-Genesis")
+        self.players = players
+        self.env = retro.make(game='MortalKombatII-Genesis', players=players)
+        print(f"Successfully loaded MortalKombatII-Genesis with {players} player(s)")
         
         self.speed_mode = speed_mode
         self.target_frame_time = 1.0 / self.FPS[speed_mode]
         self.last_frame_time = time.time()
+
         self.last_action_info = "No actions executed yet."
         self.total_reward = 0
         
@@ -55,24 +70,19 @@ class MortalKombatIIEnv:
         self._skip_start_screen()
 
     def set_speed_mode(self, mode):
-        """Change the game speed mode."""
         if mode not in self.FPS:
             raise ValueError(f"Speed mode must be one of {list(self.FPS.keys())}")
         self.speed_mode = mode
         self.target_frame_time = 1.0 / self.FPS[mode]
         print(f"Game speed set to {mode} mode ({self.FPS[mode]} FPS)")
-    
+
     def _throttle_fps(self):
-        """Throttle frame rate to maintain consistency."""
         current_time = time.time()
         frame_execution_time = current_time - self.last_frame_time
         sleep_time = max(0, self.target_frame_time - frame_execution_time)
-        
         if sleep_time > 0:
             time.sleep(sleep_time)
-        
         self.last_frame_time = time.time()
-        
         return {
             "fps": self.FPS[self.speed_mode],
             "frame_time_ms": frame_execution_time * 1000,
@@ -80,44 +90,63 @@ class MortalKombatIIEnv:
         }
 
     def parse_action_string(self, action_string):
-        """Convert an action string into button booleans for gym-retro."""
-        action_groups = re.findall(r'\[(.[^\]]*)\]', action_string.lower())
+        """
+        Parse an action string into a list of booleans for stable-retro.
+        Lowercase (e.g., [u]) for P1, uppercase (e.g., [U]) for P2.
+        """
+        print(f"Input action string: {action_string}")
+        action_groups = re.findall(r'\[([^\]]*)\]', action_string)
         if not action_groups:
-            self.last_action_info = "No actions executed."
-            return [False] * len(self.BUTTONS)  # NOOP
+            self.last_action_info = "No actions executed (use [x] for P1, [X] for P2)."
+            print("No valid actions found in string.")
+            return [False] * (len(self.BUTTONS) * self.players)
         
-        buttons = [False] * len(self.BUTTONS)
+        buttons = [False] * (len(self.BUTTONS) * self.players)
         for group in action_groups:
-            for action in re.findall(r'[a-z]{1,2}', group):  # Match 1-2 letter actions (e.g., 'hp', 'r')
-                if action in self.BUTTON_MAP and self.BUTTON_MAP[action] is not None:
-                    buttons[self.BUTTON_MAP[action]] = True
+            for char in group:
+                if char in self.BUTTON_MAP and self.BUTTON_MAP[char] is not None:
+                    index = self.BUTTON_MAP[char]
+                    buttons[index] = True
+                    player = "P1" if char.islower() else "P2" if char.isupper() else "Unknown"
+                    print(f"Set {player} button '{char}' at index {index}")
         
-        self.last_action_info = f"Executed action: {''.join(action_groups)}"
+        self.last_action_info = f"Executed action: {action_string}"
+        print(f"Resulting action array: {buttons}")
         return buttons
 
     def _skip_start_screen(self):
-        """Skip the start screen by pressing start."""
-        start_action = [False] * len(self.BUTTONS)
-        start_action[self.BUTTON_MAP['o']] = True  # Press START button
-
-        for _ in range(20):  # Repeat for 20 frames (longer start sequence)
-            self.env.step(start_action)  # Press START
-            self.env.step([False] * len(self.BUTTONS))  # No action (NOOP)
-            time.sleep(0.1)  # Delay to simulate human input
+        """Press START for both players to skip title screen and enter Versus mode."""
+        start_action = [False] * (len(self.BUTTONS) * self.players)
+        start_action[self.BUTTON_MAP['s']] = True  # P1 START
+        if self.players == 2:
+            start_action[self.BUTTON_MAP['S']] = True  # P2 START
+        
+        print(f"Skipping start screen with action: {start_action}")
+        for _ in range(10):
+            self.env.step(start_action)
+            self.env.step([False] * (len(self.BUTTONS) * self.players))
+            time.sleep(0.1)
 
     def step(self, action):
-        """Step the environment with the given action."""
+        """
+        Step the environment with the given action.
+        """
         if isinstance(action, str):
             action = self.parse_action_string(action)
         
-        observation, reward, done, info = self.env.step(action)
-        
+        print(f"Stepping with action: {action}")
+        observation, reward, terminated, truncated, info = self.env.step(action)
+        done = terminated or truncated
         self.total_reward += reward
         
         info.update({
             'total_reward': self.total_reward,
             'speed_mode': self.speed_mode,
             'last_action': self.last_action_info,
+            'p1_health': info.get('health', 0),
+            'p1_rounds_won': info.get('rounds_won', 0),
+            'p2_health': info.get('enemy_health', 0),
+            'p2_rounds_won': info.get('enemy_rounds_won', 0)
         })
         
         fps_info = self._throttle_fps()
@@ -125,61 +154,46 @@ class MortalKombatIIEnv:
         
         obs = {
             "visual": observation,
-            "text": "Which buttons would you like to press?"
+            "text": "Which buttons would you like to press? (e.g., [u] for P1, [U] for P2)"
         }
         return obs, done, info
 
     def reset(self):
-        """Reset the environment."""
         self.last_frame_time = time.time()
         self.total_reward = 0
         self.last_action_info = "No actions executed yet."
-        return self.env.reset()
+        observation = self.env.reset()
+        return observation
 
-    def render(self):
-        """Render the environment."""
-        self.env.render()
+    def render(self, mode='human'):
+        return self.env.render()
 
     def close(self):
-        """Close the environment."""
+        print("Total Rewards:", self.total_reward)
         self.env.close()
         
     def get_action_instructions(self):
-        """Return formatted action instructions."""
         return """
-Action format: Submit actions in square brackets like [hp] or [r].
-You can submit multiple actions simultaneously: [r] [hp] (equivalent to [rhp])
+Action format: Submit actions in square brackets.
+- Use lowercase [u] for Player 1.
+- Use uppercase [U] for Player 2.
 
 Available actions:
-- [u]: Jump (Up)
-- [d]: Crouch (Down)
-- [l]: Move left
-- [r]: Move right
-- [hp]: High Punch (B button)
-- [lp]: Low Punch (A button)
-- [hk]: High Kick (C button)
-- [lk]: Low Kick (X button)
-- [bl]: Block (Y button)
-- [o]: Start button
-- [n]: No operation
+- [a] or [A]: Low Punch (A)
+- [b] or [B]: Low Kick (B)
+- [c] or [C]: Block (C)
+- [x] or [X]: High Punch (X)
+- [y] or [Y]: High Kick (Y)
+- [u] or [U]: Up
+- [d] or [D]: Down
+- [l] or [L]: Left
+- [r] or [R]: Right
+- [s] or [S]: Start
+- [m] or [M]: Select (MODE)
+- [n] or [N]: No operation
 
-Common combinations:
-- [rhp]: Move right + High Punch
-- [dlk]: Crouch + Low Kick
-- [uhk]: Jump + High Kick
-- [lbl]: Move left + Block
+Examples:
+- [r][a]: P1 move right and low punch
+- [L][X]: P2 move left and high punch
+- [ra][DC]: P1 jump kick, P2 crouch block
 """
-
-# Example usage
-# if __name__ == "__main__":
-#     env = MortalKombatIIEnv(speed_mode="slow")
-    
-#     obs = env.reset()
-    
-#     for _ in range(100):
-#         obs, done, info = env.step("[rhp]")  # Move right + High Punch
-#         env.render()
-#         if done:
-#             break
-    
-#     env.close()
