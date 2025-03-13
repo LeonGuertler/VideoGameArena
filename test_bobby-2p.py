@@ -120,6 +120,7 @@ while not done:
 
 reward = env.close()
 print(f"Reward: {reward}")
+print("Info:", info)
 
 # Process and encode observations
 compressed_obs_data = []
