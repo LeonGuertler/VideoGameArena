@@ -134,12 +134,12 @@ async def handle_client(websocket):
 async def main():
     server = await websockets.serve(
         handle_client,
-        "localhost",
+        "0.0.0.0",  # ✅ CORRECT: Allows external connections
         8765,
         ping_interval=20,
         ping_timeout=60
     )
-    print("WebSocket server started at ws://localhost:8765")
+    print("WebSocket server started at ws://0.0.0.0:8765")
     await server.wait_closed()
 
 if __name__ == "__main__":

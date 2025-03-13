@@ -8,7 +8,7 @@ import videogamearena as vga
 
 agent = vga.agents.HumanAgent()
 
-env = vga.make("AirstrikerGenesis-v0")
+env = vga.make("SuperMarioBros-v0")
 
 obs = env.reset()
 done = False
