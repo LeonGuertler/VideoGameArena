@@ -179,3 +179,5 @@ static_temp
 
 *.json.gz
 *.json
+
+aws
