@@ -27,8 +27,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Import ROMs during the build process
 RUN python -m retro.import videogamearena/roms
 
-# Expose WebSocket port
-EXPOSE 8765
+# Expose a range of ports so AWS can assign a dynamic one
+EXPOSE 8000-9000
 
-# Run the server with a virtual display (xvfb)
+# Run the server with a virtual display and dynamic port
 CMD ["xvfb-run", "-s", "-screen 0 1400x900x24", "python", "server.py"]

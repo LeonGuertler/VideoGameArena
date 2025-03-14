@@ -1,3 +1,4 @@
+import os
 import asyncio
 import websockets
 import json
@@ -6,6 +7,9 @@ import cv2
 import numpy as np
 import videogamearena as vga
 from collections import defaultdict
+
+# ✅ Use an environment variable for dynamic WebSocket port (Default to 8000)
+PORT = int(os.getenv("WEBSOCKET_PORT", "8000"))
 
 ENVIRONMENT_MAPPING = {
     "mario": "SuperMarioBros-v0",
@@ -19,7 +23,6 @@ KEY_MAPPING = {
 }
 
 ACTION_SIZE = 9
-
 sessions = {}  # {session_id: {"env": env, "done": bool, "clients": set}}
 
 async def handle_client(websocket):
@@ -32,30 +35,26 @@ async def handle_client(websocket):
 
     try:
         _, slug, session_id, client_id = path.split("/")
-        session_key = session_id  # Use session_id as key, not session_id/client_id
+        session_key = session_id  # Use session_id as key
     except ValueError:
         await websocket.close(1000, "Invalid path format")
         return
 
-    print(f"New connection: {slug}/{session_id}/{client_id}")
+    print(f"New connection on port {PORT}: {slug}/{session_id}/{client_id}")
 
     env_name = ENVIRONMENT_MAPPING.get(slug.lower())
     if not env_name:
         await websocket.close(1000, f"Unknown game slug: {slug}")
         return
 
-    # Check if session already exists
     if session_key in sessions:
-        # If session exists and is done, clean it up
         if sessions[session_key]["done"]:
             sessions[session_key]["env"].close()
             del sessions[session_key]
         else:
-            # Join existing session
             sessions[session_key]["clients"].add(client_id)
             print(f"Client {client_id} joined existing session {session_id}")
     else:
-        # Create new session
         try:
             env = vga.make(env_name)
             obs = env.reset()
@@ -80,7 +79,6 @@ async def handle_client(websocket):
                 img_base64 = base64.b64encode(img_encoded.tobytes()).decode("utf-8")
                 await websocket.send(json.dumps({"type": "frame", "data": img_base64}))
 
-    # Send initial frame to new client
     await send_frame(obs if session_key not in sessions else env.render())
 
     try:
@@ -126,7 +124,7 @@ async def handle_client(websocket):
     finally:
         if session_key in sessions:
             sessions[session_key]["clients"].discard(client_id)
-            if not sessions[session_key]["clients"]:  # No more clients in session
+            if not sessions[session_key]["clients"]:
                 sessions[session_key]["env"].close()
                 del sessions[session_key]
                 print(f"Session {session_id} closed and environment cleaned up")
@@ -134,12 +132,12 @@ async def handle_client(websocket):
 async def main():
     server = await websockets.serve(
         handle_client,
-        "0.0.0.0",  # ✅ CORRECT: Allows external connections
-        8765,
+        "0.0.0.0",
+        PORT,  # ✅ Use dynamic port
         ping_interval=20,
         ping_timeout=60
     )
-    print("WebSocket server started at ws://0.0.0.0:8765")
+    print(f"WebSocket server started at ws://0.0.0.0:{PORT}")
     await server.wait_closed()
 
 if __name__ == "__main__":
