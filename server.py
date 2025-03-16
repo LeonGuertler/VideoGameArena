@@ -9,8 +9,17 @@ import videogamearena as vga
 from collections import defaultdict
 import http.server
 import threading
+import logging
 
-# ✅ Use an environment variable for dynamic WebSocket port (Default to 8000)
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s [%(levelname)s] %(message)s',
+    handlers=[logging.StreamHandler()]
+)
+logger = logging.getLogger(__name__)
+
+# Use an environment variable for dynamic WebSocket port (Default to 8000)
 PORT = int(os.getenv("WEBSOCKET_PORT", "8000"))
 # Health check port - using a different port (Default to 8001)
 HEALTH_CHECK_PORT = int(os.getenv("HEALTH_CHECK_PORT", "8001"))
@@ -36,37 +45,37 @@ class HealthCheckHandler(http.server.BaseHTTPRequestHandler):
             self.send_response(200)
             self.send_header('Content-type', 'text/plain')
             self.end_headers()
-            self.wfile.write(b'OK')
+            # Simplified health check: if the server can respond, it’s healthy
+            self.wfile.write(b"OK")
         else:
             self.send_response(404)
             self.end_headers()
     
-    # Make the HTTP server less verbose in logs
     def log_message(self, format, *args):
-        if '/health' not in args[0]:  # Only log non-health check requests
+        if '/health' not in args[0]:
             super().log_message(format, *args)
 
 def start_health_check_server():
     server = http.server.HTTPServer(('0.0.0.0', HEALTH_CHECK_PORT), HealthCheckHandler)
-    print(f"Health check server started at http://0.0.0.0:{HEALTH_CHECK_PORT}/health")
+    logger.info(f"Health check server started at http://0.0.0.0:{HEALTH_CHECK_PORT}/health")
     server.serve_forever()
 
 async def handle_client(websocket):
     try:
         path = websocket.request.path
     except AttributeError:
-        print("Error: Could not access request.path from websocket")
+        logger.error("Could not access request.path from websocket")
         await websocket.close(1000, "Unable to determine path")
         return
 
     try:
         _, slug, session_id, client_id = path.split("/")
-        session_key = session_id  # Use session_id as key
+        session_key = session_id
     except ValueError:
         await websocket.close(1000, "Invalid path format")
         return
 
-    print(f"New connection on port {PORT}: {slug}/{session_id}/{client_id}")
+    logger.info(f"New connection on port {PORT}: {slug}/{session_id}/{client_id}")
 
     env_name = ENVIRONMENT_MAPPING.get(slug.lower())
     if not env_name:
@@ -74,25 +83,26 @@ async def handle_client(websocket):
         return
 
     if session_key in sessions:
+        if sessions[session_key]["clients"]:
+            await websocket.close(1000, "Session already in use by another client")
+            logger.info(f"Rejected client {client_id} for session {session_id}: already in use")
+            return
         if sessions[session_key]["done"]:
             sessions[session_key]["env"].close()
             del sessions[session_key]
-        else:
-            sessions[session_key]["clients"].add(client_id)
-            print(f"Client {client_id} joined existing session {session_id}")
-    else:
-        try:
-            env = vga.make(env_name)
-            obs = env.reset()
-            sessions[session_key] = {
-                "env": env,
-                "done": False,
-                "clients": {client_id}
-            }
-        except Exception as e:
-            await websocket.close(1000, f"Invalid game: {slug}")
-            print(f"Error creating env: {e}")
-            return
+
+    try:
+        env = vga.make(env_name)
+        obs = env.reset()
+        sessions[session_key] = {
+            "env": env,
+            "done": False,
+            "clients": {client_id}
+        }
+    except Exception as e:
+        await websocket.close(1000, f"Invalid game: {slug}")
+        logger.error(f"Error creating env: {e}")
+        return
 
     env = sessions[session_key]["env"]
     done = sessions[session_key]["done"]
@@ -105,7 +115,7 @@ async def handle_client(websocket):
                 img_base64 = base64.b64encode(img_encoded.tobytes()).decode("utf-8")
                 await websocket.send(json.dumps({"type": "frame", "data": img_base64}))
 
-    await send_frame(obs if session_key not in sessions else env.render())
+    await send_frame(obs)
 
     try:
         frame_interval = 1 / 60
@@ -146,29 +156,29 @@ async def handle_client(websocket):
             last_frame_time = asyncio.get_event_loop().time()
 
     except websockets.ConnectionClosed:
-        print(f"Connection closed: {session_id}/{client_id}")
+        logger.info(f"Connection closed: {session_id}/{client_id}")
     finally:
         if session_key in sessions:
             sessions[session_key]["clients"].discard(client_id)
             if not sessions[session_key]["clients"]:
                 sessions[session_key]["env"].close()
                 del sessions[session_key]
-                print(f"Session {session_id} closed and environment cleaned up")
+                logger.info(f"Session {session_id} closed and environment cleaned up")
 
 async def main():
-    # Start health check server in a separate thread
     health_thread = threading.Thread(target=start_health_check_server, daemon=True)
     health_thread.start()
     
     server = await websockets.serve(
         handle_client,
         "0.0.0.0",
-        PORT,  # ✅ Use dynamic port
+        PORT,
         ping_interval=20,
         ping_timeout=60
     )
-    print(f"WebSocket server started at ws://0.0.0.0:{PORT}")
+    logger.info(f"WebSocket server started at ws://0.0.0.0:{PORT}")
     await server.wait_closed()
 
 if __name__ == "__main__":
+    logger.info("Starting server.py")
     asyncio.run(main())
