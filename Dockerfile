@@ -28,7 +28,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 RUN python -m retro.import videogamearena/roms
 
 # Expose a range of ports so AWS can assign a dynamic one
-EXPOSE 8000-9000
+EXPOSE 8000
+EXPOSE 8001
 
 # Run the server with a virtual display and dynamic port
 CMD ["xvfb-run", "-s", "-screen 0 1400x900x24", "python", "server.py"]

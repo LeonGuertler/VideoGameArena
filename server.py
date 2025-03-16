@@ -7,9 +7,13 @@ import cv2
 import numpy as np
 import videogamearena as vga
 from collections import defaultdict
+import http.server
+import threading
 
 # ✅ Use an environment variable for dynamic WebSocket port (Default to 8000)
 PORT = int(os.getenv("WEBSOCKET_PORT", "8000"))
+# Health check port - using a different port (Default to 8001)
+HEALTH_CHECK_PORT = int(os.getenv("HEALTH_CHECK_PORT", "8001"))
 
 ENVIRONMENT_MAPPING = {
     "mario": "SuperMarioBros-v0",
@@ -24,6 +28,28 @@ KEY_MAPPING = {
 
 ACTION_SIZE = 9
 sessions = {}  # {session_id: {"env": env, "done": bool, "clients": set}}
+
+# Simple HTTP server for health checks
+class HealthCheckHandler(http.server.BaseHTTPRequestHandler):
+    def do_GET(self):
+        if self.path == '/health':
+            self.send_response(200)
+            self.send_header('Content-type', 'text/plain')
+            self.end_headers()
+            self.wfile.write(b'OK')
+        else:
+            self.send_response(404)
+            self.end_headers()
+    
+    # Make the HTTP server less verbose in logs
+    def log_message(self, format, *args):
+        if '/health' not in args[0]:  # Only log non-health check requests
+            super().log_message(format, *args)
+
+def start_health_check_server():
+    server = http.server.HTTPServer(('0.0.0.0', HEALTH_CHECK_PORT), HealthCheckHandler)
+    print(f"Health check server started at http://0.0.0.0:{HEALTH_CHECK_PORT}/health")
+    server.serve_forever()
 
 async def handle_client(websocket):
     try:
@@ -130,6 +156,10 @@ async def handle_client(websocket):
                 print(f"Session {session_id} closed and environment cleaned up")
 
 async def main():
+    # Start health check server in a separate thread
+    health_thread = threading.Thread(target=start_health_check_server, daemon=True)
+    health_thread.start()
+    
     server = await websockets.serve(
         handle_client,
         "0.0.0.0",
