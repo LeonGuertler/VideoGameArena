@@ -196,6 +196,7 @@ class SuperMarioBrosEnv:
     def close(self):
         """Close the environment."""
         self.env.close()
+        return self.total_reward
         
     def get_action_instructions(self):
         """Return formatted instructions for the user on how to use actions."""
