@@ -69,13 +69,15 @@ async def handle_client(websocket):
         return
 
     try:
-        _, slug, session_id, client_id = path.split("/")
-        session_key = session_id
+        # Updated to include game_id in the path
+        _, slug, session_id, game_id, client_id = path.split("/")
+        session_key = f"{session_id}:{game_id}"  # Create a compound key
     except ValueError:
-        await websocket.close(1000, "Invalid path format")
+        logger.error(f"Invalid path format: {path}")
+        await websocket.close(1000, "Invalid path format, expected /slug/session_id/game_id/client_id")
         return
 
-    logger.info(f"New connection on port {PORT}: {slug}/{session_id}/{client_id}")
+    logger.info(f"New connection on port {PORT}: {slug}/{session_id}/{game_id}/{client_id}")
 
     env_name = ENVIRONMENT_MAPPING.get(slug.lower())
     if not env_name:
@@ -85,7 +87,7 @@ async def handle_client(websocket):
     if session_key in sessions:
         if sessions[session_key]["clients"]:
             await websocket.close(1000, "Session already in use by another client")
-            logger.info(f"Rejected client {client_id} for session {session_id}: already in use")
+            logger.info(f"Rejected client {client_id} for game {game_id} in session {session_id}: already in use")
             return
         if sessions[session_key]["done"]:
             sessions[session_key]["env"].close()
@@ -156,14 +158,14 @@ async def handle_client(websocket):
             last_frame_time = asyncio.get_event_loop().time()
 
     except websockets.ConnectionClosed:
-        logger.info(f"Connection closed: {session_id}/{client_id}")
+        logger.info(f"Connection closed: {session_id}/{game_id}/{client_id}")
     finally:
         if session_key in sessions:
             sessions[session_key]["clients"].discard(client_id)
             if not sessions[session_key]["clients"]:
                 sessions[session_key]["env"].close()
                 del sessions[session_key]
-                logger.info(f"Session {session_id} closed and environment cleaned up")
+                logger.info(f"Session {session_id}, game {game_id} closed and environment cleaned up")
 
 async def main():
     health_thread = threading.Thread(target=start_health_check_server, daemon=True)
