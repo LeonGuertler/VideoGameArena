@@ -25,16 +25,8 @@ NEXT_PUBLIC_SUPABASE_URL = os.getenv("NEXT_PUBLIC_SUPABASE_URL")
 NEXT_PUBLIC_SUPABASE_ANON_KEY = os.getenv("NEXT_PUBLIC_SUPABASE_ANON_KEY")
 supabase: Client = create_client(NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY)
 
-# Use an environment variable for dynamic WebSocket port (Default to 8000)
 PORT = int(os.getenv("WEBSOCKET_PORT", "8000"))
 HEALTH_CHECK_PORT = int(os.getenv("HEALTH_CHECK_PORT", "8001"))
-
-# Initial mapping without IDs - we'll populate IDs dynamically
-ENVIRONMENT_MAPPING = {
-    "mario": "SuperMarioBros-v0",
-    "mortal-kombat-ii": "MortalKombatII-v0",
-    "zelda": "Zelda-v0"
-}
 
 KEY_MAPPING = {
     "up": 4, "down": 5, "left": 6, "right": 7,
@@ -75,7 +67,7 @@ async def fetch_environment_ids():
         logger.info(f"Loaded environment IDs: {env_id_mapping}")
     except Exception as e:
         logger.error(f"Failed to fetch environment IDs: {e}")
-        raise  # Re-raise to halt startup if this fails
+        raise
 
 async def log_game_start(session_key: str, env_name: str, game_id: str):
     """Log the start of a game session to Supabase with the provided game_id"""
@@ -84,9 +76,8 @@ async def log_game_start(session_key: str, env_name: str, game_id: str):
         logger.error(f"No environment ID found for {env_name}")
         return
     try:
-        # Explicitly set the 'id' to match game_id from games_sessions or local
         response = supabase.table('games').insert({
-            'id': game_id,  # Use the provided game_id as the primary key
+            'id': game_id,
             'environment_id': env_id,
             'status': 'active',
             'reason': 'game started'
@@ -119,19 +110,14 @@ async def handle_client(websocket):
         return
 
     try:
-        _, slug, session_id, game_id, client_id = path.split("/")
+        _, env_name, session_id, game_id, client_id = path.split("/")
         session_key = f"{session_id}:{game_id}"
     except ValueError:
         logger.error(f"Invalid path format: {path}")
-        await websocket.close(1000, "Invalid path format, expected /slug/session_id/game_id/client_id")
+        await websocket.close(1000, "Invalid path format, expected /env_name/session_id/game_id/client_id")
         return
 
-    logger.info(f"New connection on port {PORT}: {slug}/{session_id}/{game_id}/{client_id}")
-
-    env_name = ENVIRONMENT_MAPPING.get(slug.lower())
-    if not env_name:
-        await websocket.close(1000, f"Unknown game slug: {slug}")
-        return
+    logger.info(f"New connection on port {PORT}: {env_name}/{session_id}/{game_id}/{client_id}")
 
     if session_key in sessions:
         if sessions[session_key]["clients"]:
@@ -149,12 +135,11 @@ async def handle_client(websocket):
             "env": env,
             "done": False,
             "clients": {client_id},
-            "game_id": game_id  # Store game_id in the session
+            "game_id": game_id
         }
-        # Log game start to Supabase with the provided game_id
         await log_game_start(session_key, env_name, game_id)
     except Exception as e:
-        await websocket.close(1000, f"Invalid game: {slug}")
+        await websocket.close(1000, f"Invalid game: {env_name}")
         logger.error(f"Error creating env: {e}")
         return
 
@@ -212,7 +197,6 @@ async def handle_client(websocket):
 
     except websockets.ConnectionClosed:
         logger.info(f"Connection closed: {session_id}/{game_id}/{client_id}")
-        # Update status to incomplete if game wasn't finished
         if not sessions[session_key]["done"]:
             await update_game_status(session_key, "incomplete", "session closed, but game not finished")
     finally:
@@ -224,7 +208,6 @@ async def handle_client(websocket):
                 logger.info(f"Session {session_id}, game {game_id} closed and environment cleaned up")
 
 async def main():
-    # Fetch environment IDs before starting the server
     await fetch_environment_ids()
     
     health_thread = threading.Thread(target=start_health_check_server, daemon=True)
