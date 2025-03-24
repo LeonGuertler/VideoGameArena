@@ -10,6 +10,7 @@ from collections import defaultdict
 import http.server
 import threading
 import logging
+from supabase import create_client, Client
 
 # Configure logging
 logging.basicConfig(
@@ -19,11 +20,16 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Supabase configuration
+NEXT_PUBLIC_SUPABASE_URL = os.getenv("NEXT_PUBLIC_SUPABASE_URL")
+NEXT_PUBLIC_SUPABASE_ANON_KEY = os.getenv("NEXT_PUBLIC_SUPABASE_ANON_KEY")
+supabase: Client = create_client(NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY)
+
 # Use an environment variable for dynamic WebSocket port (Default to 8000)
 PORT = int(os.getenv("WEBSOCKET_PORT", "8000"))
-# Health check port - using a different port (Default to 8001)
 HEALTH_CHECK_PORT = int(os.getenv("HEALTH_CHECK_PORT", "8001"))
 
+# Initial mapping without IDs - we'll populate IDs dynamically
 ENVIRONMENT_MAPPING = {
     "mario": "SuperMarioBros-v0",
     "mortal-kombat-ii": "MortalKombatII-v0",
@@ -36,16 +42,15 @@ KEY_MAPPING = {
 }
 
 ACTION_SIZE = 9
-sessions = {}  # {session_id: {"env": env, "done": bool, "clients": set}}
+sessions = {}  # {session_id: {"env": env, "done": bool, "clients": set, "game_id": str}}
+env_id_mapping = {}  # {env_name: id} - populated from Supabase
 
-# Simple HTTP server for health checks
 class HealthCheckHandler(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
         if self.path == '/health':
             self.send_response(200)
             self.send_header('Content-type', 'text/plain')
             self.end_headers()
-            # Simplified health check: if the server can respond, it’s healthy
             self.wfile.write(b"OK")
         else:
             self.send_response(404)
@@ -60,6 +65,51 @@ def start_health_check_server():
     logger.info(f"Health check server started at http://0.0.0.0:{HEALTH_CHECK_PORT}/health")
     server.serve_forever()
 
+async def fetch_environment_ids():
+    """Fetch environment IDs from Supabase and populate env_id_mapping"""
+    global env_id_mapping
+    try:
+        response = supabase.table('environments').select('id, env_name').execute()
+        environments = response.data
+        env_id_mapping = {env['env_name']: env['id'] for env in environments}
+        logger.info(f"Loaded environment IDs: {env_id_mapping}")
+    except Exception as e:
+        logger.error(f"Failed to fetch environment IDs: {e}")
+        raise  # Re-raise to halt startup if this fails
+
+async def log_game_start(session_key: str, env_name: str, game_id: str):
+    """Log the start of a game session to Supabase with the provided game_id"""
+    env_id = env_id_mapping.get(env_name)
+    if env_id is None:
+        logger.error(f"No environment ID found for {env_name}")
+        return
+    try:
+        # Explicitly set the 'id' to match game_id from games_sessions or local
+        response = supabase.table('games').insert({
+            'id': game_id,  # Use the provided game_id as the primary key
+            'environment_id': env_id,
+            'status': 'active',
+            'reason': 'game started'
+        }).execute()
+        logger.info(f"Logged game start for session {session_key}, game ID: {game_id}")
+    except Exception as e:
+        logger.error(f"Failed to log game start for {session_key} with game_id {game_id}: {e}")
+
+async def update_game_status(session_key: str, status: str, reason: str):
+    """Update the game status in Supabase using the stored game_id"""
+    if 'game_id' not in sessions[session_key]:
+        logger.warning(f"No game ID found for session {session_key}")
+        return
+    try:
+        game_id = sessions[session_key]['game_id']
+        supabase.table('games').update({
+            'status': status,
+            'reason': reason
+        }).eq('id', game_id).execute()
+        logger.info(f"Updated game status for session {session_key} to {status}: {reason}")
+    except Exception as e:
+        logger.error(f"Failed to update game status for {session_key}: {e}")
+
 async def handle_client(websocket):
     try:
         path = websocket.request.path
@@ -69,9 +119,8 @@ async def handle_client(websocket):
         return
 
     try:
-        # Updated to include game_id in the path
         _, slug, session_id, game_id, client_id = path.split("/")
-        session_key = f"{session_id}:{game_id}"  # Create a compound key
+        session_key = f"{session_id}:{game_id}"
     except ValueError:
         logger.error(f"Invalid path format: {path}")
         await websocket.close(1000, "Invalid path format, expected /slug/session_id/game_id/client_id")
@@ -99,8 +148,11 @@ async def handle_client(websocket):
         sessions[session_key] = {
             "env": env,
             "done": False,
-            "clients": {client_id}
+            "clients": {client_id},
+            "game_id": game_id  # Store game_id in the session
         }
+        # Log game start to Supabase with the provided game_id
+        await log_game_start(session_key, env_name, game_id)
     except Exception as e:
         await websocket.close(1000, f"Invalid game: {slug}")
         logger.error(f"Error creating env: {e}")
@@ -147,6 +199,7 @@ async def handle_client(websocket):
                     "type": "game_over",
                     "info": info
                 }))
+                await update_game_status(session_key, "finished", "game finished")
                 await websocket.close(1000, "Game Over")
                 break
 
@@ -159,6 +212,9 @@ async def handle_client(websocket):
 
     except websockets.ConnectionClosed:
         logger.info(f"Connection closed: {session_id}/{game_id}/{client_id}")
+        # Update status to incomplete if game wasn't finished
+        if not sessions[session_key]["done"]:
+            await update_game_status(session_key, "incomplete", "session closed, but game not finished")
     finally:
         if session_key in sessions:
             sessions[session_key]["clients"].discard(client_id)
@@ -168,6 +224,9 @@ async def handle_client(websocket):
                 logger.info(f"Session {session_id}, game {game_id} closed and environment cleaned up")
 
 async def main():
+    # Fetch environment IDs before starting the server
+    await fetch_environment_ids()
+    
     health_thread = threading.Thread(target=start_health_check_server, daemon=True)
     health_thread.start()
     
