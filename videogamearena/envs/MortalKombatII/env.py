@@ -9,47 +9,15 @@ class MortalKombatIIEnv:
     """A simplified environment for Mortal Kombat II (Genesis) with stable-retro, supporting 2 players."""
     
     BUTTONS = ['B', 'A', 'MODE', 'START', 'UP', 'DOWN', 'LEFT', 'RIGHT', 'C', 'Y', 'X', 'Z']
-    
-    # Button map: explicit lowercase for P1 (0-11), uppercase for P2 (12-23)
     BUTTON_MAP = {
         # Player 1 (lowercase)
-        'u': 4,     # UP
-        'd': 5,     # DOWN
-        'l': 6,     # LEFT
-        'r': 7,     # RIGHT
-        'a': 1,     # A button (Punch)
-        'b': 0,     # B button (Kick)
-        'c': 8,     # C button (Block)
-        'x': 10,    # X button (Special)
-        'y': 9,     # Y button (Special)
-        'z': 11,    # Z button (Special)
-        's': 3,     # START
-        'm': 2,     # MODE
-        'n': None,  # No operation
-        
+        'u': 4, 'd': 5, 'l': 6, 'r': 7, 'a': 1, 'b': 0, 'c': 8, 'x': 10, 'y': 9, 'z': 11, 's': 3, 'm': 2, 'n': None,
         # Player 2 (uppercase, offset by +12)
-        'U': 16,    # UP
-        'D': 17,    # DOWN
-        'L': 18,    # LEFT
-        'R': 19,    # RIGHT
-        'A': 13,    # A button (Punch)
-        'B': 12,    # B button (Kick)
-        'C': 20,    # C button (Block)
-        'X': 22,    # X button (Special)
-        'Y': 21,    # Y button (Special)
-        'Z': 23,    # Z button (Special)
-        'S': 15,    # START
-        'M': 14,    # MODE
-        'N': None,  # No operation
+        'U': 16, 'D': 17, 'L': 18, 'R': 19, 'A': 13, 'B': 12, 'C': 20, 'X': 22, 'Y': 21, 'Z': 23, 'S': 15, 'M': 14, 'N': None,
     }
+    FPS = {'human': 60, 'slow': 30, 'super-slow': 10}
 
-    FPS = {
-        'human': 60,
-        'slow': 30,
-        'super-slow': 10
-    }
-
-    def __init__(self, speed_mode='human', players=1):
+    def __init__(self, speed_mode='human', players=1, max_rounds=3):
         if speed_mode not in self.FPS:
             raise ValueError(f"Speed mode must be one of {list(self.FPS.keys())}")
         if players not in [1, 2]:
@@ -65,6 +33,9 @@ class MortalKombatIIEnv:
 
         self.last_action_info = "No actions executed yet."
         self.total_reward = 0
+        self.max_rounds = max_rounds  # Best of N rounds (default 3)
+        self.rounds_to_win = (max_rounds + 1) // 2  # e.g., 2 out of 3
+        self.final_rewards = {0: 0, 1: 0}  # Dictionary to store final rewards for P1 (0) and P2 (1)
         
         self.reset()
         self._skip_start_screen()
@@ -90,10 +61,6 @@ class MortalKombatIIEnv:
         }
 
     def parse_action_string(self, action_string):
-        """
-        Parse an action string into a list of booleans for stable-retro.
-        Lowercase (e.g., [u]) for P1, uppercase (e.g., [U]) for P2.
-        """
         print(f"Input action string: {action_string}")
         action_groups = re.findall(r'\[([^\]]*)\]', action_string)
         if not action_groups:
@@ -115,7 +82,6 @@ class MortalKombatIIEnv:
         return buttons
 
     def _skip_start_screen(self):
-        """Press START for both players to skip title screen and enter Versus mode."""
         start_action = [False] * (len(self.BUTTONS) * self.players)
         start_action[self.BUTTON_MAP['s']] = True  # P1 START
         if self.players == 2:
@@ -128,15 +94,35 @@ class MortalKombatIIEnv:
             time.sleep(0.1)
 
     def step(self, action):
-        """
-        Step the environment with the given action.
-        """
         if isinstance(action, str):
             action = self.parse_action_string(action)
         
         print(f"Stepping with action: {action}")
         observation, reward, terminated, truncated, info = self.env.step(action)
-        done = terminated or truncated
+        
+        # Update round counts from info
+        p1_rounds_won = info.get('rounds_won', 0)
+        p2_rounds_won = info.get('enemy_rounds_won', 0)
+        
+        # Check if a round has ended
+        round_ended = info.get('health', 100) <= 0 or info.get('enemy_health', 100) <= 0 or terminated
+        
+        # Override done: only True if someone wins best of max_rounds
+        done = False
+        if p1_rounds_won >= self.rounds_to_win:
+            self.final_rewards = {0: 1, 1: -1}  # P1 wins
+            reward = 1  # For P1 perspective during stepping
+            done = True
+            print(f"Match ended: P1 wins with {p1_rounds_won} rounds!")
+        elif p2_rounds_won >= self.rounds_to_win:
+            self.final_rewards = {0: -1, 1: 1}  # P2 wins
+            reward = -1  # For P1 perspective during stepping
+            done = True
+            print(f"Match ended: P2 wins with {p2_rounds_won} rounds!")
+        elif round_ended:
+            print(f"Round ended. P1 rounds: {p1_rounds_won}, P2 rounds: {p2_rounds_won}")
+            reward = 0  # No reward until match winner is determined
+        
         self.total_reward += reward
         
         info.update({
@@ -144,9 +130,12 @@ class MortalKombatIIEnv:
             'speed_mode': self.speed_mode,
             'last_action': self.last_action_info,
             'p1_health': info.get('health', 0),
-            'p1_rounds_won': info.get('rounds_won', 0),
+            'p1_rounds_won': p1_rounds_won,
             'p2_health': info.get('enemy_health', 0),
-            'p2_rounds_won': info.get('enemy_rounds_won', 0)
+            'p2_rounds_won': p2_rounds_won,
+            'max_rounds': self.max_rounds,
+            'rounds_to_win': self.rounds_to_win,
+            'final_rewards': self.final_rewards
         })
         
         fps_info = self._throttle_fps()
@@ -162,6 +151,7 @@ class MortalKombatIIEnv:
         self.last_frame_time = time.time()
         self.total_reward = 0
         self.last_action_info = "No actions executed yet."
+        self.final_rewards = {0: 0, 1: 0}  # Reset final rewards
         observation = self.env.reset()
         return observation
 
@@ -169,9 +159,10 @@ class MortalKombatIIEnv:
         return self.env.render()
 
     def close(self):
-        print("Total Rewards:", self.total_reward)
+        print(f"Final Rewards: {self.final_rewards}")
         self.env.close()
-        
+        return self.final_rewards  # Return dictionary {0: reward_P1, 1: reward_P2}
+
     def get_action_instructions(self):
         return """
 Action format: Submit actions in square brackets.

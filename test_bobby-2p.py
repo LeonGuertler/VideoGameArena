@@ -74,10 +74,10 @@ import re
 
 # Create two human agents (both output lowercase actions)
 agent1 = vga.agents.HumanAgent()  # Player 1
-# agent2 = vga.agents.HumanAgent()  # Player 2
+agent2 = vga.agents.HumanAgent()  # Player 2
 
 # agent1 = vga.agents.OpenRouterAgent("openai/gpt-4o-mini")
-agent2 = vga.agents.OpenRouterAgent("anthropic/claude-3.5-haiku")
+# agent2 = vga.agents.OpenRouterAgent("anthropic/claude-3.5-haiku")
 
 # Assuming MortalKombatIIEnv is registered as "MortalKombatII-2p-v0" in videogamearena
 env = vga.make("MortalKombatII-2p-v0-slow")
@@ -117,6 +117,10 @@ while not done:
     # Uncomment to limit frames for testing
     # if frame_count == 500:
     #     break
+
+if done:
+    print("Round over! Game ending in 10 seconds...")
+    time.sleep(10)
 
 reward = env.close()
 print(f"Reward: {reward}")

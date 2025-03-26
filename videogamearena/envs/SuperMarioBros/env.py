@@ -31,7 +31,7 @@ class SuperMarioBrosEnv:
         'super-slow': 10   # 10 fps - very slow for detailed analysis
     }
 
-    def __init__(self, speed_mode='human'):
+    def __init__(self, speed_mode='human', players = 1):
         """
         Initialize a new Super Mario Bros environment using stable-retro.
 
